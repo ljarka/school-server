@@ -1,6 +1,6 @@
 # T-012 — CI: checks, neutral names, module boundaries, GHCR release
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-002 (image); can start right after T-001 with the non-Docker steps
 **ADRs:** 0009, 0006, 0001, 0005
 

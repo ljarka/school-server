@@ -45,7 +45,7 @@ Everything that knows the provider, isolated in `journal/`.
 |------|-------------|--------|
 | [T-010](tasks/T-010-api-grades-messages.md) | API: grades, subjects, messages, read state; OpenAPI + `/docs` | `done` |
 | [T-011](tasks/T-011-api-changes-status.md) | API: `/changes` feed, `/status` | `done` |
-| [T-012](tasks/T-012-neutral-names-ci.md) | CI: tests, neutral-names check, GHCR release | `ready` |
+| [T-012](tasks/T-012-neutral-names-ci.md) | CI: tests, neutral-names check, GHCR release | `done` |
 | [T-013](tasks/T-013-e2e-and-readme.md) | End-to-end test, README check, first live run | `draft` |
 
 Order: T-001 first. Then T-002/T-003/T-004 and T-005→T-006/T-007 can go in parallel.

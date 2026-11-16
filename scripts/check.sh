@@ -3,4 +3,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+./scripts/check-neutral-names.sh
+./scripts/check-module-boundaries.sh
 ./gradlew ktlintCheck :server:verifySqlDelightMigration test

@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Neutral names & module boundaries & Gradle checks
+        run: ./scripts/check.sh
+
+      - name: Lint OpenAPI spec
+        run: npx --yes @redocly/cli lint docs/api/openapi.yaml
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t school-server:ci .
+
+      - name: Smoke test container
+        run: |
+          docker run -d --name school-smoke \
+            -e SCHOOL_JOURNAL_URL=https://portal.example.test \
+            -e SCHOOL_JOURNAL_API_URL=https://api.example.test \
+            -e SCHOOL_JOURNAL_MESSAGES_URL=https://messages.example.test \
+            -e SCHOOL_LOGIN=parent@example.test \
+            -e SCHOOL_PASSWORD=secret \
+            -e SCHOOL_API_KEY=test \
+            -p 5100:5100 \
+            school-server:ci
+
+          trap 'docker rm -f school-smoke || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5100/health; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:5100/health | grep -q '"ok"'
+          status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5100/api/v1/status)
+          test "$status" = "401"

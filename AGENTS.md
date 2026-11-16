@@ -79,17 +79,17 @@ implement as much as it can**, not to stop and ask.
 
 | Module / path | Scope | Status |
 |---|---|---|
-| `:model` | `Grade`, `Message`, `MessageHeader`, `ChangeEvent`, API DTOs (`@Serializable`), `JournalClient`, `AuthRejected`, `JournalUnavailable` | todo |
-| `:journal` | OkHttp + Jsoup implementation of `JournalClient`: login flow, grades and messages parsers; fixtures in `src/test/resources/fixtures/` | todo |
-| `:server` `config/` | `Config` from env, `Secret`, validation, `*_FILE` support | todo |
-| `:server` `api/` | Ktor routing under `/api/v1`, StatusPages error format, `Cache-Control: no-store`, `/api/v1/openapi.yaml`, Swagger UI at `/docs` | todo |
-| `:server` `auth/` | `X-School-Key` plugin, wrong-key limiter, client IP (`CF-Connecting-IP`) | todo |
-| `:server` `store/` | SQLDelight database, `.sq`/`.sqm`, backup-before-migrate, `Store` facade | todo |
-| `:server` `sync/` | `ChangeDetector`, `SyncService` (coroutine loop, `Mutex`, backoff, `auth_failed`) | todo |
-| `:server` `Main.kt` | Wiring: config → store → journal client → sync → Ktor (Netty) | todo |
-| `docker/`, `Dockerfile`, `docker-entrypoint.sh` | Install files and image ([ADR 0005](docs/adrs/0005-docker-distribution.md)) | todo |
-| `.github/workflows/` | `ci.yml`, `release.yml` ([ADR 0009](docs/adrs/0009-ci-github-actions.md)) | todo |
-| `scripts/` | `check.sh`, `check-neutral-names.sh`, `check-module-boundaries.sh` | todo |
+| `:model` | `Grade`, `Message`, `MessageHeader`, `ChangeEvent`, API DTOs (`@Serializable`), `JournalClient`, `AuthRejected`, `JournalUnavailable` | done |
+| `:journal` | OkHttp + Jsoup implementation of `JournalClient`: login flow, grades and messages parsers; fixtures in `src/test/resources/fixtures/` | done |
+| `:server` `config/` | `Config` from env, `Secret`, validation, `*_FILE` support | done |
+| `:server` `api/` | Ktor routing under `/api/v1`, StatusPages error format, `Cache-Control: no-store`, `/api/v1/openapi.yaml`, Swagger UI at `/docs` | done |
+| `:server` `auth/` | `X-School-Key` plugin, wrong-key limiter, client IP (`CF-Connecting-IP`) | done |
+| `:server` `store/` | SQLDelight database, `.sq`/`.sqm`, backup-before-migrate, `Store` facade | done |
+| `:server` `sync/` | `ChangeDetector`, `SyncService` (coroutine loop, `Mutex`, backoff, `auth_failed`) | done |
+| `:server` `Main.kt` | Wiring: config → store → journal client → sync → Ktor (Netty) | done |
+| `docker/`, `Dockerfile`, `docker-entrypoint.sh` | Install files and image ([ADR 0005](docs/adrs/0005-docker-distribution.md)) | done |
+| `.github/workflows/` | `ci.yml`, `release.yml` ([ADR 0009](docs/adrs/0009-ci-github-actions.md)) | done |
+| `scripts/` | `check.sh`, `check-neutral-names.sh`, `check-module-boundaries.sh` | done |
 
 Update the Status column when a module lands.
 

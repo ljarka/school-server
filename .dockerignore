@@ -3,7 +3,8 @@
 .kotlin
 build
 */build
-docs
+docs/*
+!docs/api/
 .env
 *.env
 !docker/example.env

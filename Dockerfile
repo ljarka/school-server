@@ -23,6 +23,8 @@ LABEL org.opencontainers.image.title="School Server" \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
+    && (userdel -r ubuntu 2>/dev/null || true) \
+    && (groupdel ubuntu 2>/dev/null || true) \
     && groupadd -g 1000 school \
     && useradd -u 1000 -g school -m -s /bin/sh school \
     && mkdir -p /data \

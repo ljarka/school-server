@@ -218,11 +218,15 @@ class HttpJournalClient(
 
     private fun getGatewayApiJson(path: String): String {
         val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
-        val first = session.get(url = url, headers = mapOf("Accept" to "application/json"))
+        val headers = mapOf(
+            "Accept" to "application/json",
+            "User-Agent" to BROWSER_USER_AGENT,
+        )
+        val first = session.get(url = url, headers = headers)
         if (first.code == 401 || first.code == 403) {
             logger.debug("e-journal gateway returned {}, re-authenticating", first.code)
             performGatewayLogin()
-            val retry = session.get(url = url, headers = mapOf("Accept" to "application/json"))
+            val retry = session.get(url = url, headers = headers)
             return handleApiResponse(retry, path)
         }
         return handleApiResponse(first, path)
@@ -422,7 +426,10 @@ class HttpJournalClient(
     }
 
     private fun activateGatewayMessages() {
-        val res = session.get(url = endpoints.gatewayUrl(ProtocolPaths.MESSAGES_ACTIVATION_PATH))
+        val res = session.get(
+            url = endpoints.gatewayUrl(ProtocolPaths.MESSAGES_ACTIVATION_PATH),
+            headers = mapOf("User-Agent" to BROWSER_USER_AGENT),
+        )
         if (res.code >= 500) {
             throw JournalUnavailable("http_${res.code}")
         }
@@ -467,5 +474,7 @@ class HttpJournalClient(
     private companion object {
         const val MAX_MESSAGE_PAGES = 50
         const val MAX_MESSAGES_TOTAL = 5_000
+        const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gecko/20100101 Firefox/62.0"
     }
 }

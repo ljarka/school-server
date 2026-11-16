@@ -1,6 +1,6 @@
 # T-004 — API key, wrong-key limiter, Cloudflare client IP
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-001
 **ADRs:** 0004
 

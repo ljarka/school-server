@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.sqldelight)
     application
 }
 
@@ -10,6 +11,17 @@ kotlin {
 
 application {
     mainClass.set("school.server.MainKt")
+}
+
+sqldelight {
+    databases {
+        create("SchoolDatabase") {
+            packageName.set("school.server.store.db")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:${libs.versions.sqldelight.get()}")
+            schemaOutputDirectory.set(file("src/main/sqldelight/databases"))
+            verifyMigrations.set(true)
+        }
+    }
 }
 
 dependencies {
@@ -25,6 +37,7 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.datetime)
+    implementation(libs.sqldelight.sqlite.driver)
     implementation(libs.logback.classic)
 
     testImplementation(libs.ktor.server.test.host)

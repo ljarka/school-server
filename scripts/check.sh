@@ -3,4 +3,4 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-./gradlew ktlintCheck test
+./gradlew ktlintCheck :server:verifySqlDelightMigration test

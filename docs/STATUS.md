@@ -20,7 +20,7 @@ Runnable, installable, secured server without e-journal data yet.
 |------|-------------|--------|
 | [T-001](tasks/T-001-project-skeleton.md) | Project skeleton, config, `/health` | `done` |
 | [T-002](tasks/T-002-docker-image.md) | Docker image, compose, example.env | `done` |
-| [T-003](tasks/T-003-sqlite-store.md) | `SqliteStore` with migrations, school schema | `ready` |
+| [T-003](tasks/T-003-sqlite-store.md) | `SqliteStore` with migrations, school schema | `done` |
 | [T-004](tasks/T-004-api-key-auth.md) | API key, wrong-key limiter, Cloudflare client IP | `done` |
 
 ### Phase 2 — E-journal adapter

@@ -1,6 +1,6 @@
 # T-003 — SQLite store with SQLDelight and migrations
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-001
 **ADRs:** 0002, 0003, 0007
 

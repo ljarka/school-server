@@ -1,0 +1,196 @@
+CREATE TABLE grade (
+    source_id TEXT PRIMARY KEY,
+    subject TEXT NOT NULL,
+    value TEXT NOT NULL,
+    numeric_value REAL,
+    weight INTEGER,
+    category TEXT NOT NULL,
+    semester INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    counts_to_average INTEGER NOT NULL,
+    teacher TEXT NOT NULL,
+    comment TEXT,
+    issued_on TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+
+CREATE TABLE message (
+    source_id TEXT PRIMARY KEY,
+    sender TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body_text TEXT,
+    body_html TEXT,
+    sent_at TEXT NOT NULL,
+    attachments TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    read_at TEXT,
+    first_seen_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+
+CREATE TABLE sync_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL,
+    error_code TEXT,
+    items_fetched INTEGER NOT NULL DEFAULT 0,
+    changes_detected INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE change_event (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    change_type TEXT NOT NULL,
+    diff TEXT,
+    detected_at TEXT NOT NULL,
+    sync_run_id INTEGER NOT NULL REFERENCES sync_run(id)
+);
+
+CREATE INDEX change_event_type ON change_event(entity_type, id);
+
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Grade queries
+
+upsertGrade:
+INSERT INTO grade (
+    source_id, subject, value, numeric_value, weight, category, semester, kind,
+    counts_to_average, teacher, comment, issued_on, content_hash, first_seen_at, updated_at, deleted_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(source_id) DO UPDATE SET
+    subject = excluded.subject,
+    value = excluded.value,
+    numeric_value = excluded.numeric_value,
+    weight = excluded.weight,
+    category = excluded.category,
+    semester = excluded.semester,
+    kind = excluded.kind,
+    counts_to_average = excluded.counts_to_average,
+    teacher = excluded.teacher,
+    comment = excluded.comment,
+    issued_on = excluded.issued_on,
+    content_hash = excluded.content_hash,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at;
+
+softDeleteGrade:
+UPDATE grade SET deleted_at = ?, updated_at = ? WHERE source_id = ? AND deleted_at IS NULL;
+
+selectGradeById:
+SELECT * FROM grade WHERE source_id = ?;
+
+listGrades:
+SELECT * FROM grade
+WHERE (:includeDeleted = 1 OR deleted_at IS NULL)
+  AND (:semester IS NULL OR semester = :semester)
+  AND (:subject IS NULL OR subject = :subject)
+ORDER BY issued_on DESC, source_id ASC;
+
+countActiveGrades:
+SELECT COUNT(*) FROM grade WHERE deleted_at IS NULL;
+
+-- Message queries
+
+upsertMessage:
+INSERT INTO message (
+    source_id, sender, subject, body_text, body_html, sent_at, attachments,
+    content_hash, read_at, first_seen_at, updated_at, deleted_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(source_id) DO UPDATE SET
+    sender = excluded.sender,
+    subject = excluded.subject,
+    body_text = COALESCE(excluded.body_text, message.body_text),
+    body_html = COALESCE(excluded.body_html, message.body_html),
+    sent_at = excluded.sent_at,
+    attachments = excluded.attachments,
+    content_hash = excluded.content_hash,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at;
+
+softDeleteMessage:
+UPDATE message SET deleted_at = ?, updated_at = ? WHERE source_id = ? AND deleted_at IS NULL;
+
+selectMessageById:
+SELECT * FROM message WHERE source_id = ?;
+
+listMessages:
+SELECT * FROM message
+WHERE (:includeDeleted = 1 OR deleted_at IS NULL)
+  AND (:unreadOnly = 0 OR read_at IS NULL)
+ORDER BY sent_at DESC, source_id DESC
+LIMIT :limit OFFSET :offset;
+
+markMessageRead:
+UPDATE message SET read_at = COALESCE(read_at, :readAt) WHERE source_id = :sourceId;
+
+markMessageUnread:
+UPDATE message SET read_at = NULL WHERE source_id = ?;
+
+markAllMessagesRead:
+UPDATE message SET read_at = ? WHERE read_at IS NULL AND deleted_at IS NULL;
+
+countActiveMessages:
+SELECT COUNT(*) FROM message WHERE deleted_at IS NULL;
+
+countUnreadMessages:
+SELECT COUNT(*) FROM message WHERE deleted_at IS NULL AND read_at IS NULL;
+
+-- Change event queries
+
+insertChangeEvent:
+INSERT INTO change_event (entity_type, entity_id, change_type, diff, detected_at, sync_run_id)
+VALUES (?, ?, ?, ?, ?, ?);
+
+listChangeEventsAfter:
+SELECT * FROM change_event
+WHERE id > :afterId
+  AND (:entityType IS NULL OR entity_type = :entityType)
+ORDER BY id ASC
+LIMIT :limit;
+
+listChangeEventsSince:
+SELECT * FROM change_event
+WHERE detected_at >= :since
+  AND (:entityType IS NULL OR entity_type = :entityType)
+ORDER BY id ASC
+LIMIT :limit;
+
+lastChangeEventId:
+SELECT COALESCE(MAX(id), 0) FROM change_event;
+
+-- Sync run queries
+
+insertSyncRun:
+INSERT INTO sync_run (started_at, status) VALUES (?, ?);
+
+lastSyncRunId:
+SELECT COALESCE(MAX(id), 0) FROM sync_run;
+
+finishSyncRun:
+UPDATE sync_run
+SET finished_at = ?, status = ?, error_code = ?, items_fetched = ?, changes_detected = ?
+WHERE id = ?;
+
+selectLastSyncRun:
+SELECT * FROM sync_run ORDER BY id DESC LIMIT 1;
+
+selectLastSuccessfulSyncRun:
+SELECT * FROM sync_run WHERE status = 'ok' ORDER BY id DESC LIMIT 1;
+
+-- Meta queries
+
+getMeta:
+SELECT value FROM meta WHERE key = ?;
+
+setMeta:
+INSERT INTO meta (key, value) VALUES (?, ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;

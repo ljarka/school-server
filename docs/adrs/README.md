@@ -16,6 +16,7 @@ A changed decision gets a new ADR; the old one is marked superseded, never rewri
 | [0009](0009-ci-github-actions.md) | CI and releases on GitHub Actions (lint, tests, boundaries, neutral names, gitleaks, multi-arch image) | accepted |
 | [0010](0010-openapi-contract-first.md) | Contract-first API: `docs/api/openapi.yaml`, served at `/api/v1/openapi.yaml` + Swagger UI `/docs`, responses validated in tests | accepted |
 | [0011](0011-journal-data-source.md) | Parent portal account + JSON API v3 + new messages service; no HTML scraping | accepted |
+| [0012](0012-school-id-gateway-login.md) | School-issued numeric login via OAuth + Gateway API 2.0 | accepted |
 
 Agent-made decisions are welcome (AGENTS.md "Autonomy"): mark them
 `accepted (agent decision, YYYY-MM-DD)`; the owner may supersede them later.

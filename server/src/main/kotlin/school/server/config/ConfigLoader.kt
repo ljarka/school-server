@@ -15,11 +15,17 @@ object ConfigLoader {
         val journalUrl = parseUrl(env, "SCHOOL_JOURNAL_URL", problems)
         val journalApiUrl = parseUrl(env, "SCHOOL_JOURNAL_API_URL", problems)
         val journalMessagesUrl = parseUrl(env, "SCHOOL_JOURNAL_MESSAGES_URL", problems)
+        val journalGatewayUrl = parseOptionalUrl(env, "SCHOOL_JOURNAL_GATEWAY_URL", problems)
         val child = env["SCHOOL_CHILD"]?.trim()?.ifEmpty { null }
 
         val login = env["SCHOOL_LOGIN"]?.trim()?.ifEmpty { null }
         if (login == null) {
             problems += "SCHOOL_LOGIN is required"
+        } else if (!login.contains("@") &&
+            journalGatewayUrl == null &&
+            env["SCHOOL_JOURNAL_GATEWAY_URL"].isNullOrBlank()
+        ) {
+            problems += "SCHOOL_JOURNAL_GATEWAY_URL is required for non-email logins"
         }
 
         val passwordResult = loadPassword(env, readFile, problems)
@@ -52,6 +58,7 @@ object ConfigLoader {
             journalUrl = journalUrl!!,
             journalApiUrl = journalApiUrl!!,
             journalMessagesUrl = journalMessagesUrl!!,
+            journalGatewayUrl = journalGatewayUrl,
             child = child,
             login = login!!,
             password = passwordResult.secret!!,
@@ -64,12 +71,21 @@ object ConfigLoader {
         )
     }
 
+    private fun parseOptionalUrl(env: Map<String, String>, name: String, problems: MutableList<String>): String? {
+        val raw = env[name]?.trim()?.ifEmpty { null } ?: return null
+        return validateUrl(raw, name, problems)
+    }
+
     private fun parseUrl(env: Map<String, String>, name: String, problems: MutableList<String>): String? {
         val raw = env[name]?.trim()?.ifEmpty { null }
         if (raw == null) {
             problems += "$name is required"
             return null
         }
+        return validateUrl(raw, name, problems)
+    }
+
+    private fun validateUrl(raw: String, name: String, problems: MutableList<String>): String? {
         val uri = runCatching { URI.create(raw) }.getOrNull()
         val scheme = uri?.scheme?.lowercase()
         val host = uri?.host?.lowercase()

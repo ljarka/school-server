@@ -21,4 +21,11 @@ internal object ProtocolPaths {
     const val MESSAGES_ACTIVATION_PATH = "/wiadomosci3"
     const val MESSAGES_INBOX_PATH = "/api/inbox/messages"
     const val MESSAGES_UNREAD_COUNT_PATH = "/api/inbox/unreadMessagesCount"
+
+    const val GATEWAY_PORTAL_INIT_PATH = "/loguj/portalRodzina"
+    const val OAUTH_AUTHORIZATION_PATH = "/OAuth/Authorization?client_id=46"
+    const val OAUTH_PERFORM_LOGIN_PATH = "/OAuth/Authorization/PerformLogin?client_id=46"
+    const val OAUTH_GRANT_PATH = "/OAuth/Authorization/Grant?client_id=46"
+    const val GATEWAY_API_PREFIX = "/gateway/api/2.0"
+    const val GATEWAY_TOKEN_INFO_PATH = "/gateway/api/2.0/Auth/TokenInfo"
 }

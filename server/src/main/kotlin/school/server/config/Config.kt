@@ -16,6 +16,7 @@ data class Config(
     val journalUrl: String,
     val journalApiUrl: String,
     val journalMessagesUrl: String,
+    val journalGatewayUrl: String? = null,
     val child: String?,
     val login: String,
     val password: Secret,

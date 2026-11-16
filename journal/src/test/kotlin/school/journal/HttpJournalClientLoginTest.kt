@@ -164,6 +164,48 @@ class HttpJournalClientLoginTest {
     }
 
     @Test
+    fun `gateway numeric login authenticates via OAuth and fetches grades via gateway`() {
+        val base = server.url("/").toString().trimEnd('/')
+        val gatewayClient = HttpJournalClient(
+            endpoints = JournalEndpoints(portal = base, api = "$base/3.0", messages = base, gateway = base),
+            login = "1234567u",
+            passwordProvider = { "secret-journal-password" },
+            minRequestDelayMs = 0L,
+        )
+
+        server.enqueue(MockResponse(code = 200, body = "ok")) // portal init
+        server.enqueue(MockResponse(code = 200, body = "auth")) // GET OAuth/Authorization
+        server.enqueue(MockResponse(code = 200, body = """{"status":"ok"}""")) // POST credentials
+        server.enqueue(MockResponse(code = 200, body = "ok")) // PerformLogin 1
+        server.enqueue(MockResponse(code = 200, body = "ok")) // PerformLogin 2
+        server.enqueue(MockResponse(code = 200, body = "ok")) // Grant
+        server.enqueue(MockResponse(code = 200, body = """{"UserIdentifier":"1234567u"}""")) // TokenInfo
+        server.enqueue(MockResponse(code = 200, body = """{"Grades":[]}""")) // GET /gateway/api/2.0/Grades
+
+        gatewayClient.login()
+        assertEquals(emptyList(), gatewayClient.fetchGrades())
+        assertEquals(8, server.requestCount)
+    }
+
+    @Test
+    fun `gateway numeric login rejects wrong credentials with AuthRejected`() {
+        val base = server.url("/").toString().trimEnd('/')
+        val gatewayClient = HttpJournalClient(
+            endpoints = JournalEndpoints(portal = base, api = "$base/3.0", messages = base, gateway = base),
+            login = "1234567u",
+            passwordProvider = { "wrong" },
+            minRequestDelayMs = 0L,
+        )
+
+        server.enqueue(MockResponse(code = 200, body = "ok"))
+        server.enqueue(MockResponse(code = 200, body = "auth"))
+        server.enqueue(MockResponse(code = 400, body = """{"status":"error"}"""))
+
+        assertFailsWith<AuthRejected> { gatewayClient.login() }
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test
     fun `debug logs never leak password or bearer token`() {
         val journalLogger = LoggerFactory.getLogger("school.journal") as Logger
         val previousLevel = journalLogger.level

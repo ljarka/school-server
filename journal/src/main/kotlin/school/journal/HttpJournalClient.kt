@@ -2,6 +2,7 @@ package school.journal
 
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
+import okhttp3.MultipartBody
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import school.model.AuthRejected
@@ -23,10 +24,18 @@ class HttpJournalClient(
     private val session = PortalSession(endpoints = endpoints, minDelayMs = minRequestDelayMs)
     private val tokenProvider = TokenProvider()
     private val json = Json { ignoreUnknownKeys = true }
+    private val isGatewayMode = !login.contains("@")
+
+    @Volatile
+    private var messagesActivated = false
 
     override fun login() {
-        val account = performPortalLogin()
-        tokenProvider.setAccount(account)
+        if (isGatewayMode) {
+            performGatewayLogin()
+        } else {
+            val account = performPortalLogin()
+            tokenProvider.setAccount(account)
+        }
         logger.debug("e-journal login succeeded")
     }
 
@@ -130,10 +139,32 @@ class HttpJournalClient(
     }
 
     private fun getMessagesJson(path: String): String {
+        if (isGatewayMode && !messagesActivated) {
+            activateGatewayMessages()
+        }
+
         val res = session.get(
             url = endpoints.messagesUrl(path),
             headers = mapOf("Accept" to "application/json"),
         )
+        if ((res.code == 401 || res.code == 403) && isGatewayMode) {
+            performGatewayLogin()
+            activateGatewayMessages()
+            val retry = session.get(
+                url = endpoints.messagesUrl(path),
+                headers = mapOf("Accept" to "application/json"),
+            )
+            if (retry.code == 401 || retry.code == 403) {
+                throw JournalUnavailable("auth_refresh_failed")
+            }
+            if (retry.code >= 500) {
+                throw JournalUnavailable("http_${retry.code}")
+            }
+            if (retry.code !in 200..299) {
+                throw JournalUnavailable("http_${retry.code}")
+            }
+            return retry.body
+        }
         if (res.code == 401 || res.code == 403) {
             throw JournalUnavailable("auth_refresh_failed")
         }
@@ -147,10 +178,14 @@ class HttpJournalClient(
     }
 
     /**
-     * Performs a GET request to JSON API v3 with the cached child bearer token,
+     * Performs a GET request to JSON API v3 (bearer) or Gateway API 2.0 (cookie),
      * refreshing once on 401.
      */
     internal fun getApiJson(path: String): String {
+        if (isGatewayMode) {
+            return getGatewayApiJson(path)
+        }
+
         val token = tokenProvider.currentToken()
             ?: throw JournalUnavailable("not_authenticated")
 
@@ -178,6 +213,18 @@ class HttpJournalClient(
             return handleApiResponse(retry, path)
         }
 
+        return handleApiResponse(first, path)
+    }
+
+    private fun getGatewayApiJson(path: String): String {
+        val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
+        val first = session.get(url = url, headers = mapOf("Accept" to "application/json"))
+        if (first.code == 401 || first.code == 403) {
+            logger.debug("e-journal gateway returned {}, re-authenticating", first.code)
+            performGatewayLogin()
+            val retry = session.get(url = url, headers = mapOf("Accept" to "application/json"))
+            return handleApiResponse(retry, path)
+        }
         return handleApiResponse(first, path)
     }
 
@@ -313,6 +360,100 @@ class HttpJournalClient(
         }
         throw JournalUnavailable("layout_changed:login")
     }
+
+    private fun performGatewayLogin() {
+        val initUrl = endpoints.gatewayUrl(
+            "${ProtocolPaths.GATEWAY_PORTAL_INIT_PATH}?v=${System.currentTimeMillis() / 1000.0}",
+        )
+        val initRes = session.get(
+            url = initUrl,
+            headers = mapOf("Referer" to endpoints.portalUrl("/")),
+        )
+        checkGatewayStep(initRes)
+
+        val authUrl = endpoints.apiOriginUrl(ProtocolPaths.OAUTH_AUTHORIZATION_PATH)
+        checkGatewayStep(session.get(authUrl))
+
+        val formBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("action", "login")
+            .addFormDataPart("login", login)
+            .addFormDataPart("pass", passwordProvider())
+            .build()
+
+        val postRes = session.postForm(
+            url = authUrl,
+            body = formBody,
+            headers = mapOf(
+                "Accept" to "application/json",
+                "X-Requested-With" to "XMLHttpRequest",
+                "X-Baner" to createBanerHeader(),
+                "Referer" to authUrl,
+            ),
+        )
+        if (postRes.code >= 500) {
+            throw JournalUnavailable("http_${postRes.code}")
+        }
+        if (postRes.code == 400 || postRes.code == 401 || postRes.code == 403 || postRes.code == 422) {
+            throw AuthRejected("rejected")
+        }
+        if (postRes.code !in 200..299) {
+            throw JournalUnavailable("http_${postRes.code}")
+        }
+        if (postRes.body.contains("\"status\":\"error\"", ignoreCase = true) ||
+            postRes.body.contains("\"errors\"", ignoreCase = true)
+        ) {
+            throw AuthRejected("rejected")
+        }
+
+        val performUrl = endpoints.apiOriginUrl(ProtocolPaths.OAUTH_PERFORM_LOGIN_PATH)
+        checkGatewayStep(session.get(performUrl))
+        checkGatewayStep(session.get(performUrl))
+
+        val grantUrl = endpoints.apiOriginUrl(ProtocolPaths.OAUTH_GRANT_PATH)
+        checkGatewayStep(session.get(grantUrl))
+
+        val tokenInfoRes = session.get(
+            url = endpoints.gatewayUrl(ProtocolPaths.GATEWAY_TOKEN_INFO_PATH),
+            headers = mapOf("Accept" to "application/json"),
+        )
+        checkGatewayStep(tokenInfoRes)
+        messagesActivated = false
+    }
+
+    private fun activateGatewayMessages() {
+        val res = session.get(url = endpoints.gatewayUrl(ProtocolPaths.MESSAGES_ACTIVATION_PATH))
+        if (res.code >= 500) {
+            throw JournalUnavailable("http_${res.code}")
+        }
+        if (res.code !in 200..299) {
+            throw JournalUnavailable("http_${res.code}")
+        }
+        messagesActivated = true
+    }
+
+    private fun checkGatewayStep(res: HttpResponseData) {
+        if (res.code >= 500) {
+            throw JournalUnavailable("http_${res.code}")
+        }
+        if (res.code == 401 || res.code == 403) {
+            throw AuthRejected("rejected")
+        }
+        if (res.code !in 200..299) {
+            throw JournalUnavailable("http_${res.code}")
+        }
+        if (hasInteractiveStep(res.body)) {
+            throw AuthRejected("interactive_step_required")
+        }
+    }
+
+    private fun createBanerHeader(): String {
+        val ts = encodeBanerSegment(System.currentTimeMillis().toString())
+        val rnd = encodeBanerSegment(Math.random().toString())
+        return "${rnd}_$ts"
+    }
+
+    private fun encodeBanerSegment(value: String): String = value.map { (it.code + 20).toChar() }.joinToString("")
 
     private fun hasInteractiveStep(body: String): Boolean {
         val lower = body.lowercase()

@@ -126,6 +126,18 @@ class ConfigLoaderTest {
     }
 
     @Test
+    fun `non-email login requires SCHOOL_JOURNAL_GATEWAY_URL`() {
+        val env = baseEnv() + mapOf("SCHOOL_LOGIN" to "1234567u")
+        val error = assertFailsWith<ConfigError> { ConfigLoader.load(env) }
+        assertTrue(error.problems.any { it.contains("SCHOOL_JOURNAL_GATEWAY_URL") })
+
+        val withGateway = ConfigLoader.load(
+            env + mapOf("SCHOOL_JOURNAL_GATEWAY_URL" to "https://gateway.example.test"),
+        )
+        assertEquals("https://gateway.example.test", withGateway.journalGatewayUrl)
+    }
+
+    @Test
     fun `config toString never leaks password or api key`() {
         val env = baseEnv() + mapOf("SCHOOL_API_KEY" to "my-api-key-123")
         val config = ConfigLoader.load(env)

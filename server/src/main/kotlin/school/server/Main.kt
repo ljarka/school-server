@@ -75,6 +75,7 @@ fun main() {
                 portal = config.journalUrl,
                 api = config.journalApiUrl,
                 messages = config.journalMessagesUrl,
+                gateway = config.journalGatewayUrl,
             ),
             login = config.login,
             passwordProvider = { config.password.reveal() },

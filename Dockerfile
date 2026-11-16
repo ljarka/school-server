@@ -40,6 +40,7 @@ ENV PORT=5100 \
     JAVA_OPTS="-XX:MaxRAMPercentage=50 -XX:+UseSerialGC"
 
 VOLUME /data
+WORKDIR /data
 EXPOSE 5100
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \

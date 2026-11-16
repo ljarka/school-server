@@ -1,6 +1,6 @@
 # T-006 — Grades from the JSON API
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-005
 **ADRs:** 0011, 0003, 0006
 

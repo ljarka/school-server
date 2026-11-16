@@ -1,0 +1,7 @@
+{
+  "Categories": [
+    { "Id": 10, "Name": "Sprawdzian", "Weight": 3, "CountToTheAverage": true },
+    { "Id": 11, "Name": "Aktywność", "Weight": 1, "CountToTheAverage": false },
+    { "Id": 12, "Name": "Ocena okresowa", "Weight": null, "CountToTheAverage": false }
+  ]
+}

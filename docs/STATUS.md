@@ -29,7 +29,7 @@ Everything that knows the provider, isolated in `journal/`.
 | Task | Description | Status |
 |------|-------------|--------|
 | [T-005](tasks/T-005-journal-login.md) | Journal client: login, session, `auth_failed`; data source decision (ADR 0011) | `done` |
-| [T-006](tasks/T-006-grades-parser.md) | Grades fetch + parser with fixtures | `ready` |
+| [T-006](tasks/T-006-grades-parser.md) | Grades fetch + parser with fixtures | `done` |
 | [T-007](tasks/T-007-messages-parser.md) | Messages fetch + parser with fixtures | `ready` |
 
 ### Phase 3 — Sync and changes

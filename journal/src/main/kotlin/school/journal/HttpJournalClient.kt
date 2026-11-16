@@ -29,8 +29,58 @@ class HttpJournalClient(
         logger.debug("e-journal login succeeded")
     }
 
-    override fun fetchGrades(): List<Grade> =
-        throw UnsupportedOperationException("Grades fetching is implemented in T-006")
+    override fun fetchGrades(): List<Grade> {
+        val gradesRaw = getApiJson(ProtocolPaths.API_GRADES_PATH)
+        val gradesResponse = try {
+            json.decodeFromString<GradesResponseDto>(gradesRaw)
+        } catch (e: Exception) {
+            throw JournalUnavailable("layout_changed:grades", e)
+        }
+
+        if (gradesResponse.grades.isEmpty()) {
+            return emptyList()
+        }
+
+        val subjects = decodeLookup<SubjectsResponseDto>(
+            ProtocolPaths.API_SUBJECTS_PATH,
+            "subjects",
+        ).subjects.associateBy { it.id }
+
+        val categories = decodeLookup<GradeCategoriesResponseDto>(
+            ProtocolPaths.API_CATEGORIES_PATH,
+            "categories",
+        ).categories.associateBy { it.id }
+
+        val comments = decodeLookup<GradeCommentsResponseDto>(
+            ProtocolPaths.API_COMMENTS_PATH,
+            "comments",
+        ).comments
+            .filter { it.grade != null && it.text.isNotBlank() }
+            .groupBy { it.grade!!.id }
+            .mapValues { (_, list) -> list.joinToString("\n") { it.text.trim() } }
+
+        val users = decodeLookup<UsersResponseDto>(
+            ProtocolPaths.API_USERS_PATH,
+            "users",
+        ).users.associateBy { it.id }
+
+        return GradesMapper.map(
+            grades = gradesResponse.grades,
+            subjects = subjects,
+            categories = categories,
+            commentsByGradeId = comments,
+            users = users,
+        )
+    }
+
+    private inline fun <reified T> decodeLookup(path: String, name: String): T {
+        val raw = getApiJson(path)
+        return try {
+            json.decodeFromString<T>(raw)
+        } catch (e: Exception) {
+            throw JournalUnavailable("layout_changed:$name", e)
+        }
+    }
 
     override fun fetchMessageHeaders(): List<MessageHeader> =
         throw UnsupportedOperationException("Messages fetching is implemented in T-007")

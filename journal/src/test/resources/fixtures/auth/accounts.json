@@ -1,0 +1,23 @@
+{
+  "lastModification": 1731700000,
+  "accounts": [
+    {
+      "id": 101,
+      "accountIdentifier": "acc-101",
+      "group": "student",
+      "login": "123456u",
+      "studentName": "Ala Kowalska",
+      "accessToken": "fake-child-token-101",
+      "state": "active"
+    },
+    {
+      "id": 102,
+      "accountIdentifier": "acc-102",
+      "group": "student",
+      "login": "654321u",
+      "studentName": "Jan Kowalski",
+      "accessToken": "fake-child-token-102",
+      "state": "active"
+    }
+  ]
+}

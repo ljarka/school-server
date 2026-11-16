@@ -13,8 +13,10 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.datetime)
+    implementation(libs.slf4j.api)
 
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.logback.classic)
 }

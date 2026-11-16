@@ -1,6 +1,6 @@
 # T-005 — Journal client: portal login, child selection, tokens
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-001
 **ADRs:** 0011, 0003, 0006, 0008
 
@@ -69,4 +69,8 @@ Live check against the owner's account: `blocked: needs owner` → T-013.
 
 ## Decisions
 
+- **DTOs:** Hand-written `@Serializable` DTOs (`ignoreUnknownKeys = true`) in `:journal` rather than OpenAPI codegen, keeping zero generated provider names and minimal build complexity.
+
 ## Remaining
+
+- Live check against the owner's account: `blocked: needs owner` (deferred to T-013).

@@ -1,0 +1,9 @@
+{
+  "id": 101,
+  "accountIdentifier": "acc-101",
+  "group": "student",
+  "login": "123456u",
+  "studentName": "Ala Kowalska",
+  "accessToken": "refreshed-child-token-101",
+  "state": "active"
+}

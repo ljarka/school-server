@@ -21,3 +21,6 @@ internal data class PortalAccountsResponseDto(
     val lastModification: Long = 0L,
     val accounts: List<PortalAccountDto> = emptyList(),
 )
+
+@Serializable
+internal data class GatewayTokenInfoDto(val UserIdentifier: String = "")

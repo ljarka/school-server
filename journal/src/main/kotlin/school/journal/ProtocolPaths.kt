@@ -28,8 +28,5 @@ internal object ProtocolPaths {
     const val OAUTH_GRANT_PATH = "/OAuth/Authorization/Grant?client_id=46"
     const val GATEWAY_API_PREFIX = "/gateway/api/2.0"
     const val GATEWAY_TOKEN_INFO_PATH = "/gateway/api/2.0/Auth/TokenInfo"
-    const val GATEWAY_ORIGIN = "app://librus"
-    const val GATEWAY_USER_AGENT =
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) " +
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 LibrusMobileApp"
+    const val GATEWAY_USER_INFO_PATH = "/gateway/api/2.0/Auth/UserInfo"
 }

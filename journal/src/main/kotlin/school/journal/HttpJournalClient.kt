@@ -220,8 +220,7 @@ class HttpJournalClient(
         val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
         val headers = mapOf(
             "Accept" to "application/json",
-            "Origin" to ProtocolPaths.GATEWAY_ORIGIN,
-            "User-Agent" to ProtocolPaths.GATEWAY_USER_AGENT,
+            "User-Agent" to BROWSER_USER_AGENT,
         )
         val first = session.get(url = url, headers = headers)
         if (first.code == 401 || first.code == 403) {
@@ -420,9 +419,25 @@ class HttpJournalClient(
 
         val tokenInfoRes = session.get(
             url = endpoints.gatewayUrl(ProtocolPaths.GATEWAY_TOKEN_INFO_PATH),
-            headers = mapOf("Accept" to "application/json"),
+            headers = mapOf(
+                "Accept" to "application/json",
+                "User-Agent" to BROWSER_USER_AGENT,
+            ),
         )
         checkGatewayStep(tokenInfoRes)
+        val identifier = runCatching {
+            json.decodeFromString<GatewayTokenInfoDto>(tokenInfoRes.body).UserIdentifier
+        }.getOrDefault("")
+        if (identifier.isNotEmpty()) {
+            val userInfoRes = session.get(
+                url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_USER_INFO_PATH}/$identifier"),
+                headers = mapOf(
+                    "Accept" to "application/json",
+                    "User-Agent" to BROWSER_USER_AGENT,
+                ),
+            )
+            checkGatewayStep(userInfoRes)
+        }
         messagesActivated = false
     }
 

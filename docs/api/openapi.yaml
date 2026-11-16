@@ -1,0 +1,507 @@
+openapi: 3.1.0
+info:
+  title: School Server API
+  version: 1.0.0
+  summary: Grades and messages from a school e-journal, with a change feed.
+  description: |
+    Read-only view of a child's school e-journal (parent account), refreshed every 15 minutes.
+
+    **Authentication:** send `X-School-Key: <key>` on every `/api/v1` request.
+    **Times:** ISO 8601 in UTC. **Dates** (`issuedOn`): `YYYY-MM-DD`, school-local.
+    **Caching:** every response is `Cache-Control: no-store`.
+    **Compatibility:** within `/api/v1` fields are only ever *added*. Clients must ignore unknown
+    fields and unknown enum values. Breaking changes go to `/api/v2`.
+
+    Integration guide: `docs/api/README.md`.
+  license:
+    name: Private
+servers:
+  - url: http://localhost:5100
+    description: Local
+  - url: https://school.example.com
+    description: Behind Cloudflare Tunnel
+security:
+  - SchoolKey: []
+tags:
+  - name: Health
+  - name: Status
+  - name: Grades
+  - name: Messages
+  - name: Changes
+  - name: Sync
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness check (no key needed)
+      security: []
+      operationId: getHealth
+      responses:
+        '200':
+          description: Server is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+
+  /api/v1/status:
+    get:
+      tags: [Status]
+      summary: Sync state, counts and the latest change id
+      operationId: getStatus
+      responses:
+        '200':
+          description: Current status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/grades:
+    get:
+      tags: [Grades]
+      summary: List grades
+      operationId: listGrades
+      parameters:
+        - name: subject
+          in: query
+          description: Exact subject name as returned in `Grade.subject`.
+          schema: { type: string }
+        - name: semester
+          in: query
+          schema: { type: integer, enum: [1, 2] }
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/GradeKind' }
+        - name: since
+          in: query
+          description: Only grades first seen by the server at or after this time.
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/IncludeDeleted'
+      responses:
+        '200':
+          description: Grades, newest `issuedOn` first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Grade' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /api/v1/grades/subjects:
+    get:
+      tags: [Grades]
+      summary: Grades grouped by subject, with weighted average
+      operationId: listSubjects
+      parameters:
+        - name: semester
+          in: query
+          schema: { type: integer, enum: [1, 2] }
+      responses:
+        '200':
+          description: One entry per subject, alphabetical
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SubjectSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /api/v1/messages:
+    get:
+      tags: [Messages]
+      summary: List received messages (without body), newest first
+      operationId: listMessages
+      parameters:
+        - name: unread
+          in: query
+          description: '`true` = only messages not marked read on this server.'
+          schema: { type: boolean }
+        - name: since
+          in: query
+          description: Only messages sent at or after this time.
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque value from `nextCursor` of the previous page.
+          schema: { type: string }
+        - $ref: '#/components/parameters/IncludeDeleted'
+      responses:
+        '200':
+          description: A page of messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/MessageSummary' }
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Pass as `cursor` for the next page; `null` = last page.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /api/v1/messages/{id}:
+    parameters:
+      - $ref: '#/components/parameters/MessageId'
+    get:
+      tags: [Messages]
+      summary: One message with its body
+      operationId: getMessage
+      responses:
+        '200':
+          description: The message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/messages/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/MessageId'
+    put:
+      tags: [Messages]
+      summary: Mark as read (on this server only; idempotent)
+      operationId: markMessageRead
+      responses:
+        '200':
+          description: The updated message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [Messages]
+      summary: Mark as unread (on this server only; idempotent)
+      operationId: markMessageUnread
+      responses:
+        '200':
+          description: The updated message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/messages/read-all:
+    post:
+      tags: [Messages]
+      summary: Mark every message as read (on this server only)
+      operationId: markAllMessagesRead
+      responses:
+        '200':
+          description: How many were changed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marked]
+                properties:
+                  marked: { type: integer, minimum: 0 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/changes:
+    get:
+      tags: [Changes]
+      summary: Feed of what changed, oldest first, with a cursor
+      description: |
+        Store the last `id` you processed and ask for `after=<id>` next time.
+        The first sync reports every existing item as `created`; to skip history, start from
+        `lastEventId` in `/api/v1/status`.
+      operationId: listChanges
+      parameters:
+        - name: after
+          in: query
+          description: Return events with `id` greater than this. Default 0. Not with `since`.
+          schema: { type: integer, minimum: 0 }
+        - name: since
+          in: query
+          description: Return events detected at or after this time. Not with `after`.
+          schema: { type: string, format: date-time }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/EntityType' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: A page of change events
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/sync:
+    post:
+      tags: [Sync]
+      summary: Check the e-journal now (at most once per 5 minutes)
+      operationId: startSync
+      responses:
+        '202':
+          description: Sync started; poll `/api/v1/status`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: started }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`SYNC_IN_PROGRESS` or `AUTH_FAILED` (fix credentials and restart the server)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [Health]
+      summary: This document (no key needed)
+      security: []
+      operationId: getOpenApi
+      responses:
+        '200':
+          description: OpenAPI document
+          content:
+            application/yaml: {}
+
+components:
+  securitySchemes:
+    SchoolKey:
+      type: apiKey
+      in: header
+      name: X-School-Key
+
+  parameters:
+    MessageId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, example: m_4471 }
+    IncludeDeleted:
+      name: includeDeleted
+      in: query
+      description: Include items that disappeared from the e-journal (`deletedAt` set).
+      schema: { type: boolean, default: false }
+
+  responses:
+    BadRequest:
+      description: '`BAD_REQUEST`: invalid parameter (message names it)'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: '`UNAUTHORIZED`: missing or wrong `X-School-Key`'
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, const: School-Key }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: '`NOT_FOUND`'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: '`TOO_MANY_WRONG_KEYS` (10 wrong keys from your address in 15 min) or `SYNC_TOO_SOON`'
+      headers:
+        Retry-After:
+          description: Seconds to wait
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unavailable:
+      description: '`NO_DATA_YET` (no successful sync yet) or `STORAGE_UNAVAILABLE`'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              examples: [UNAUTHORIZED, BAD_REQUEST, NOT_FOUND, TOO_MANY_WRONG_KEYS, SYNC_TOO_SOON,
+                         SYNC_IN_PROGRESS, AUTH_FAILED, NO_DATA_YET, STORAGE_UNAVAILABLE]
+            message: { type: string }
+
+    EntityType:
+      type: string
+      enum: [grade, message]
+
+    GradeKind:
+      type: string
+      enum: [regular, proposed_semester, semester, proposed_final, final]
+
+    Grade:
+      type: object
+      required: [id, subject, value, numericValue, weight, category, semester, kind,
+                 countsToAverage, teacher, comment, issuedOn, firstSeenAt, updatedAt, deletedAt]
+      properties:
+        id: { type: string, example: g_8812 }
+        subject: { type: string, example: Matematyka }
+        value: { type: string, description: 'As shown in the e-journal: "5", "4+", "np", "+"', example: '4+' }
+        numericValue: { type: [number, 'null'], description: '"4+" → 4.5, "3-" → 2.75; null when not a number', example: 4.5 }
+        weight: { type: [integer, 'null'], example: 3 }
+        category: { type: string, example: Sprawdzian }
+        semester: { type: integer, enum: [1, 2] }
+        kind: { $ref: '#/components/schemas/GradeKind' }
+        countsToAverage: { type: boolean }
+        teacher: { type: string }
+        comment: { type: [string, 'null'] }
+        issuedOn: { type: string, format: date }
+        firstSeenAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        deletedAt: { type: [string, 'null'], format: date-time }
+
+    SubjectSummary:
+      type: object
+      required: [subject, average, grades]
+      properties:
+        subject: { type: string }
+        average:
+          type: [number, 'null']
+          description: Weighted average of grades with `countsToAverage` and a `numericValue`, 2 decimals.
+        grades:
+          type: array
+          items: { $ref: '#/components/schemas/Grade' }
+
+    Attachment:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
+    MessageSummary:
+      type: object
+      required: [id, sender, subject, sentAt, hasAttachments, read, readAt, deletedAt]
+      properties:
+        id: { type: string, example: m_4471 }
+        sender: { type: string }
+        subject: { type: string }
+        sentAt: { type: string, format: date-time }
+        hasAttachments: { type: boolean }
+        read: { type: boolean, description: Marked read on this server (not in the e-journal). }
+        readAt: { type: [string, 'null'], format: date-time }
+        deletedAt: { type: [string, 'null'], format: date-time }
+
+    Message:
+      allOf:
+        - $ref: '#/components/schemas/MessageSummary'
+        - type: object
+          required: [bodyText, bodyHtml, attachments]
+          properties:
+            bodyText: { type: string }
+            bodyHtml: { type: string, description: Sanitised HTML, safe to render. }
+            attachments:
+              type: array
+              items: { $ref: '#/components/schemas/Attachment' }
+
+    ChangeEvent:
+      type: object
+      required: [id, entityType, entityId, changeType, detectedAt, entity, diff]
+      properties:
+        id: { type: integer, description: Monotonic cursor }
+        entityType: { $ref: '#/components/schemas/EntityType' }
+        entityId: { type: string }
+        changeType: { type: string, enum: [created, updated, deleted] }
+        detectedAt: { type: string, format: date-time }
+        entity:
+          description: Current state (for `deleted`, the last known state). Messages without body.
+          oneOf:
+            - $ref: '#/components/schemas/Grade'
+            - $ref: '#/components/schemas/MessageSummary'
+        diff:
+          type: [object, 'null']
+          description: 'For `updated`: `{"field": [old, new]}`.'
+          additionalProperties:
+            type: array
+            minItems: 2
+            maxItems: 2
+
+    ChangePage:
+      type: object
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ChangeEvent' }
+        nextCursor: { type: integer, description: Use as `after` next time. }
+        hasMore: { type: boolean }
+
+    SyncRun:
+      type: object
+      required: [startedAt, finishedAt, status, errorCode, itemsFetched, changesDetected]
+      properties:
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+        status: { type: string, enum: [running, ok, error, auth_failed] }
+        errorCode: { type: [string, 'null'], examples: [journal_unavailable, layout_changed:grades] }
+        itemsFetched: { type: integer }
+        changesDetected: { type: integer }
+
+    Status:
+      type: object
+      required: [auth, lastSync, lastSuccessfulSyncAt, nextSyncAt, lastEventId, counts, version]
+      properties:
+        auth: { type: string, enum: [ok, auth_failed, unknown] }
+        lastSync:
+          oneOf:
+            - $ref: '#/components/schemas/SyncRun'
+            - type: 'null'
+        lastSuccessfulSyncAt: { type: [string, 'null'], format: date-time }
+        nextSyncAt: { type: [string, 'null'], format: date-time }
+        lastEventId: { type: integer }
+        counts:
+          type: object
+          required: [grades, messages, unreadMessages]
+          properties:
+            grades: { type: integer }
+            messages: { type: integer }
+            unreadMessages: { type: integer }
+        version: { type: string, example: 0.1.0 }

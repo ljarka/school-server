@@ -1,0 +1,34 @@
+# Obsidian vault / AI assistant files
+.claude/
+.copilot/
+.obsidian/
+copilot/
+
+# Private notes: provider names, hosts, reference links (repo is public, ADR 0006)
+private/
+
+# Secrets and local data (ADR 0008)
+.env
+*.env
+!docker/example.env
+school_password.txt
+data/
+*.db
+# ...except SQLDelight schema snapshots used to verify migrations (ADR 0002)
+!**/src/main/sqldelight/databases/*.db
+*.db-shm
+*.db-wal
+*.bak
+
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store

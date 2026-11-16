@@ -15,16 +15,17 @@ import school.model.JournalUnavailable
 internal data class HttpResponseData(val code: Int, val contentType: String?, val body: String, val finalUrl: HttpUrl)
 
 internal class InMemoryCookieJar : CookieJar {
-    private val store = LinkedHashMap<String, MutableList<Cookie>>()
+    private val cookies = mutableListOf<Cookie>()
 
     @Synchronized
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val host = url.host.lowercase()
-        val existing = store.getOrPut(host) { mutableListOf() }
+        val now = System.currentTimeMillis()
         for (cookie in cookies) {
-            existing.removeAll { it.name == cookie.name && it.path == cookie.path }
-            if (cookie.expiresAt > System.currentTimeMillis()) {
-                existing.add(cookie)
+            this.cookies.removeAll {
+                it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path
+            }
+            if (cookie.expiresAt > now) {
+                this.cookies.add(cookie)
             }
         }
     }
@@ -32,8 +33,6 @@ internal class InMemoryCookieJar : CookieJar {
     @Synchronized
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val now = System.currentTimeMillis()
-        val host = url.host.lowercase()
-        val cookies = store[host] ?: return emptyList()
         cookies.removeAll { it.expiresAt <= now }
         return cookies.filter { it.matches(url) }
     }

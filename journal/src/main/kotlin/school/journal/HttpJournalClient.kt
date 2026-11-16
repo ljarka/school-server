@@ -220,7 +220,8 @@ class HttpJournalClient(
         val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
         val headers = mapOf(
             "Accept" to "application/json",
-            "User-Agent" to BROWSER_USER_AGENT,
+            "Origin" to ProtocolPaths.GATEWAY_ORIGIN,
+            "User-Agent" to ProtocolPaths.GATEWAY_USER_AGENT,
         )
         val first = session.get(url = url, headers = headers)
         if (first.code == 401 || first.code == 403) {

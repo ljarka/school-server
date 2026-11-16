@@ -3,6 +3,7 @@ package school.server.auth
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.createRouteScopedPlugin
+import io.ktor.server.request.path
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import java.security.MessageDigest
@@ -27,6 +28,9 @@ val ApiKeyPlugin =
         val limiter = pluginConfig.limiter
 
         onCall { call ->
+            if (call.request.path() == "/api/v1/openapi.yaml") {
+                return@onCall
+            }
             val address = clientAddress(call, trustProxy)
             val retryAfter = limiter.blockedRetryAfterSeconds(address)
             if (retryAfter != null) {

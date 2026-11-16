@@ -110,6 +110,22 @@ class SyncService(
         consecutiveErrors = consecutiveErrors,
     )
 
+    fun canTriggerManualSync(): SyncResult.Skipped? {
+        val now = clock.now()
+        val prevManual = lastManualTriggerAt
+        if (prevManual != null) {
+            val elapsed = now - prevManual
+            if (elapsed < config.manualCooldown) {
+                val remaining = maxOf(1L, (config.manualCooldown - elapsed).inWholeSeconds)
+                return SyncResult.Skipped(reason = "too_soon", retryAfterSeconds = remaining)
+            }
+        }
+        if (mutex.isLocked) {
+            return SyncResult.Skipped(reason = "in_progress")
+        }
+        return null
+    }
+
     suspend fun syncNow(manual: Boolean = false): SyncResult {
         if (authState == AuthState.AUTH_FAILED) {
             return SyncResult.AuthFailed

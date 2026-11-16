@@ -1,6 +1,6 @@
 # T-011 — API: `/changes` feed and `/status`
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-004, T-009
 **ADRs:** 0003
 

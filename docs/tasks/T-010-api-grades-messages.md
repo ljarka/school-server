@@ -1,6 +1,6 @@
 # T-010 — API: grades, subjects, messages, read state
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-004, T-009
 **ADRs:** 0004, 0007, 0010
 

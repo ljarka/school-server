@@ -13,6 +13,12 @@ application {
     mainClass.set("school.server.MainKt")
 }
 
+tasks.named<ProcessResources>("processResources") {
+    from("../docs/api/openapi.yaml") {
+        into("")
+    }
+}
+
 sqldelight {
     databases {
         create("SchoolDatabase") {
@@ -34,6 +40,7 @@ dependencies {
     implementation(libs.ktor.server.status.pages)
     implementation(libs.ktor.server.call.logging)
     implementation(libs.ktor.server.default.headers)
+    implementation(libs.ktor.server.swagger)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.datetime)

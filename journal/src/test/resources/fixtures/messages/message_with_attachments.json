@@ -1,0 +1,14 @@
+{
+  "data": {
+    "messageId": 4471,
+    "senderName": "Anna Nowak",
+    "topic": "Wycieczka szkolna",
+    "sendDate": "2026-11-16 14:30:00",
+    "content": "<p>Plan wycieczki w załączniku.</p>",
+    "hasAttachments": true,
+    "attachments": [
+      { "name": "plan_wycieczki.pdf" },
+      { "filename": "zgoda_rodzicow.docx" }
+    ]
+  }
+}

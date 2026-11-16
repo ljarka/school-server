@@ -1,6 +1,6 @@
 # T-007 — Messages from the new messages module
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-005
 **ADRs:** 0011, 0003, 0006, 0007
 
@@ -64,5 +64,7 @@ anonymised real ones: `inbox_page1.json`,
 Tests green; zero non-GET requests from message code.
 
 ## Decisions
+
+- **Paging:** Page-based full inbox scan (`page=1, 2, ...`, cap 50 pages / 5,000 messages) rather than `afterId` incremental reads, because change detection (T-008) needs the full active set to detect `deleted` messages.
 
 ## Remaining

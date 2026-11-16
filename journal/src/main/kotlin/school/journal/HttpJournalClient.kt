@@ -17,6 +17,7 @@ class HttpJournalClient(
     private val passwordProvider: () -> String,
     private val configuredChild: String? = null,
     minRequestDelayMs: Long = 500L,
+    private val messagesPageLimit: Int = 300,
 ) : JournalClient {
     private val logger = LoggerFactory.getLogger(HttpJournalClient::class.java)
     private val session = PortalSession(endpoints = endpoints, minDelayMs = minRequestDelayMs)
@@ -82,11 +83,68 @@ class HttpJournalClient(
         }
     }
 
-    override fun fetchMessageHeaders(): List<MessageHeader> =
-        throw UnsupportedOperationException("Messages fetching is implemented in T-007")
+    override fun fetchMessageHeaders(): List<MessageHeader> {
+        val result = mutableListOf<MessageHeader>()
+        val seenIds = HashSet<String>()
 
-    override fun fetchMessage(sourceId: String): Message =
-        throw UnsupportedOperationException("Messages fetching is implemented in T-007")
+        for (page in 1..MAX_MESSAGE_PAGES) {
+            val path = "${ProtocolPaths.MESSAGES_INBOX_PATH}?page=$page&limit=$messagesPageLimit"
+            val raw = getMessagesJson(path)
+            val parsed = try {
+                json.decodeFromString<MessagesListResponseDto>(raw)
+            } catch (e: Exception) {
+                throw JournalUnavailable("layout_changed:messages", e)
+            }
+
+            if (parsed.data.isEmpty()) {
+                break
+            }
+
+            for (item in parsed.data) {
+                val header = MessagesMapper.mapHeader(item)
+                if (seenIds.add(header.sourceId)) {
+                    result.add(header)
+                    if (result.size >= MAX_MESSAGES_TOTAL) {
+                        return result
+                    }
+                }
+            }
+
+            if (parsed.data.size < messagesPageLimit) {
+                break
+            }
+        }
+
+        return result
+    }
+
+    override fun fetchMessage(sourceId: String): Message {
+        val rawId = sourceId.removePrefix("m_")
+        val raw = getMessagesJson("${ProtocolPaths.MESSAGES_INBOX_PATH}/$rawId")
+        val parsed = try {
+            json.decodeFromString<MessageDetailResponseDto>(raw)
+        } catch (e: Exception) {
+            throw JournalUnavailable("layout_changed:messages", e)
+        }
+        return MessagesMapper.mapDetail(parsed.data)
+    }
+
+    private fun getMessagesJson(path: String): String {
+        val res = session.get(
+            url = endpoints.messagesUrl(path),
+            headers = mapOf("Accept" to "application/json"),
+        )
+        if (res.code == 401 || res.code == 403) {
+            throw JournalUnavailable("auth_refresh_failed")
+        }
+        if (res.code >= 500) {
+            throw JournalUnavailable("http_${res.code}")
+        }
+        if (res.code !in 200..299) {
+            throw JournalUnavailable("http_${res.code}")
+        }
+        return res.body
+    }
 
     /**
      * Performs a GET request to JSON API v3 with the cached child bearer token,
@@ -263,5 +321,10 @@ class HttpJournalClient(
             lower.contains("two-factor") ||
             lower.contains("2fa") ||
             lower.contains("verification_code")
+    }
+
+    private companion object {
+        const val MAX_MESSAGE_PAGES = 50
+        const val MAX_MESSAGES_TOTAL = 5_000
     }
 }

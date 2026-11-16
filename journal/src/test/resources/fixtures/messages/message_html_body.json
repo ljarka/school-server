@@ -1,0 +1,9 @@
+{
+  "data": {
+    "messageId": 4472,
+    "senderName": "Administrator",
+    "topic": "Ogłoszenie",
+    "sendDate": "2026-11-16 16:00:00",
+    "content": "<p onclick=\"alert(1)\" style=\"color:red\">Dzień dobry!</p><script>evil()</script><br><a href=\"https://example.test\">Link</a>"
+  }
+}

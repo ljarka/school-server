@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "messageId": 4471,
+      "senderName": "Anna Nowak",
+      "topic": "Wycieczka szkolna",
+      "sendDate": "2026-11-16 14:30:00",
+      "hasAttachments": true
+    },
+    {
+      "messageId": 4470,
+      "senderFirstName": "Jan",
+      "senderLastName": "Kowalski",
+      "topic": "Zebranie rodziców",
+      "sendDate": "2026-11-15 10:00:00",
+      "attachmentsCount": 0
+    }
+  ]
+}

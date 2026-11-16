@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.logback.classic)
 
     testImplementation(libs.ktor.server.test.host)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.junit.jupiter)
 }

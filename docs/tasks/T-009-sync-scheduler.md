@@ -1,6 +1,6 @@
 # T-009 — Sync service: scheduler, lock, backoff, auth_failed, manual sync
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-005, T-008
 **ADRs:** 0003, 0008
 

@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationStopping
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -22,6 +23,8 @@ import kotlin.system.exitProcess
 import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import school.journal.HttpJournalClient
+import school.journal.JournalEndpoints
 import school.server.api.configureStatusPages
 import school.server.api.healthRoutes
 import school.server.auth.ApiKeyPlugin
@@ -29,6 +32,11 @@ import school.server.auth.WrongKeyLimiter
 import school.server.config.Config
 import school.server.config.ConfigError
 import school.server.config.ConfigLoader
+import school.server.store.DatabaseFactory
+import school.server.store.Store
+import school.server.store.db.SchoolDatabase
+import school.server.sync.SyncConfig
+import school.server.sync.SyncService
 
 fun main() {
     val config = try {
@@ -41,11 +49,36 @@ fun main() {
 
     configureLogging(config)
 
+    val driver = DatabaseFactory.open(config.dbPath)
+    val store = Store(SchoolDatabase(driver))
+    val journal = HttpJournalClient(
+        endpoints = JournalEndpoints(
+            portal = config.journalUrl,
+            api = config.journalApiUrl,
+            messages = config.journalMessagesUrl,
+        ),
+        login = config.login,
+        passwordProvider = { config.password.reveal() },
+        configuredChild = config.child,
+    )
+    val syncService = SyncService(
+        journal = journal,
+        store = store,
+        config = SyncConfig(intervalMinutes = config.syncIntervalMinutes),
+    )
+
     try {
         embeddedServer(Netty, port = config.port) {
+            syncService.start(this)
+            monitor.subscribe(ApplicationStopping) {
+                syncService.stop()
+                runCatching { driver.close() }
+            }
             schoolModule(config)
         }.start(wait = true)
     } catch (e: BindException) {
+        syncService.stop()
+        runCatching { driver.close() }
         System.err.println(
             "Port ${config.port} is already in use. Set SCHOOL_PORT (Docker) or PORT to a free port.",
         )

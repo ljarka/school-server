@@ -1,6 +1,6 @@
 # T-008 — Change detector and change events
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-003, T-006, T-007
 **ADRs:** 0003, 0007
 

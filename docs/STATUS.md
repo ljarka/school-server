@@ -36,7 +36,7 @@ Everything that knows the provider, isolated in `journal/`.
 
 | Task | Description | Status |
 |------|-------------|--------|
-| [T-008](tasks/T-008-change-detector.md) | Change detector and `change_events` | `ready` |
+| [T-008](tasks/T-008-change-detector.md) | Change detector and `change_events` | `done` |
 | [T-009](tasks/T-009-sync-scheduler.md) | Sync scheduler, lock, backoff, `/sync` | `ready` |
 
 ### Phase 4 — API and release

@@ -13,6 +13,7 @@ import school.model.Message
 import school.model.MessageHeader
 import school.model.SyncRunStatus
 import school.server.store.db.SchoolDatabase
+import school.server.sync.Changes
 
 data class StoredGrade(
     val grade: Grade,
@@ -276,6 +277,93 @@ class Store(private val db: SchoolDatabase) {
 
     fun setMeta(key: String, value: String) {
         db.schemaQueries.setMeta(key, value)
+    }
+
+    fun applyChanges(
+        syncRunId: Long,
+        gradeChanges: Changes<Grade>,
+        messageChanges: Changes<Message>,
+        now: Instant,
+    ): Int = transaction {
+        for (created in gradeChanges.created) {
+            upsertGrade(created.item, contentHash = created.contentHash, now = now, firstSeenAt = now)
+            insertChangeEvent(
+                entityType = EntityType.GRADE,
+                entityId = created.item.sourceId,
+                changeType = ChangeType.CREATED,
+                diffJson = null,
+                detectedAt = now,
+                syncRunId = syncRunId,
+            )
+        }
+        for (updated in gradeChanges.updated) {
+            upsertGrade(
+                updated.item,
+                contentHash = updated.contentHash,
+                now = now,
+                firstSeenAt = updated.firstSeenAt,
+            )
+            insertChangeEvent(
+                entityType = EntityType.GRADE,
+                entityId = updated.item.sourceId,
+                changeType = ChangeType.UPDATED,
+                diffJson = updated.diffJson,
+                detectedAt = now,
+                syncRunId = syncRunId,
+            )
+        }
+        for (deletedId in gradeChanges.deletedIds) {
+            softDeleteGrade(deletedId, now = now)
+            insertChangeEvent(
+                entityType = EntityType.GRADE,
+                entityId = deletedId,
+                changeType = ChangeType.DELETED,
+                diffJson = null,
+                detectedAt = now,
+                syncRunId = syncRunId,
+            )
+        }
+
+        for (created in messageChanges.created) {
+            upsertMessage(created.item, contentHash = created.contentHash, now = now, firstSeenAt = now)
+            insertChangeEvent(
+                entityType = EntityType.MESSAGE,
+                entityId = created.item.sourceId,
+                changeType = ChangeType.CREATED,
+                diffJson = null,
+                detectedAt = now,
+                syncRunId = syncRunId,
+            )
+        }
+        for (updated in messageChanges.updated) {
+            upsertMessage(
+                updated.item,
+                contentHash = updated.contentHash,
+                now = now,
+                firstSeenAt = updated.firstSeenAt,
+            )
+            insertChangeEvent(
+                entityType = EntityType.MESSAGE,
+                entityId = updated.item.sourceId,
+                changeType = ChangeType.UPDATED,
+                diffJson = updated.diffJson,
+                detectedAt = now,
+                syncRunId = syncRunId,
+            )
+        }
+        for (deletedId in messageChanges.deletedIds) {
+            softDeleteMessage(deletedId, now = now)
+            insertChangeEvent(
+                entityType = EntityType.MESSAGE,
+                entityId = deletedId,
+                changeType = ChangeType.DELETED,
+                diffJson = null,
+                detectedAt = now,
+                syncRunId = syncRunId,
+            )
+        }
+
+        gradeChanges.totalCount + messageChanges.totalCount
     }
 
     private fun school.server.store.db.Grade.toStoredGrade(): StoredGrade = StoredGrade(

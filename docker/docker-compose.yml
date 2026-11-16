@@ -1,0 +1,18 @@
+# School Server — 3-step install:
+#   1. cp example.env .env && chmod 600 .env   (fill in your e-journal URLs and credentials)
+#   2. docker compose pull
+#   3. docker compose up -d
+
+name: school
+
+services:
+  school_server:
+    container_name: school_server
+    image: ghcr.io/ljarka/school-server:${SCHOOL_VERSION:-latest}
+    ports:
+      - "${SCHOOL_PORT:-5100}:5100"
+    volumes:
+      - "${DATA_LOCATION:-./data}:/data"
+    env_file:
+      - .env
+    restart: always

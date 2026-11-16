@@ -1,6 +1,6 @@
 # T-002 — Docker image, compose, example.env
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-001
 **ADRs:** 0005, 0006, 0008
 

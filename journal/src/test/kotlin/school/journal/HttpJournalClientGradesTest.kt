@@ -101,4 +101,34 @@ class HttpJournalClientGradesTest {
         val ex = assertFailsWith<JournalUnavailable> { journal.fetchGrades() }
         assertEquals("layout_changed:grades", ex.message)
     }
+
+    @Test
+    fun `gateway 403 AccessDeny on grades returns empty list without failing`() {
+        val base = server.url("/").toString().trimEnd('/')
+        val gatewayClient = HttpJournalClient(
+            endpoints = JournalEndpoints(portal = base, api = "$base/3.0", messages = base, gateway = base),
+            login = "1234567u",
+            passwordProvider = { "secret" },
+            minRequestDelayMs = 0L,
+        )
+        server.enqueue(MockResponse(code = 200, body = "ok")) // portal init
+        server.enqueue(MockResponse(code = 200, body = "auth")) // GET OAuth/Authorization
+        server.enqueue(MockResponse(code = 200, body = """{"status":"ok"}""")) // POST credentials
+        server.enqueue(MockResponse(code = 200, body = "ok")) // PerformLogin 1
+        server.enqueue(MockResponse(code = 200, body = "ok")) // PerformLogin 2
+        server.enqueue(MockResponse(code = 200, body = "ok")) // Grant
+        server.enqueue(MockResponse(code = 200, body = """{"UserIdentifier":"1234567u"}""")) // TokenInfo
+        server.enqueue(MockResponse(code = 200, body = "{}")) // UserInfo
+        server.enqueue(
+            MockResponse(
+                code = 403,
+                body =
+                """{"Status":"Error","Code":"AccessDeny",""" +
+                    """"Message":"Account not have access to Grades resource"}""",
+            ),
+        )
+
+        gatewayClient.login()
+        assertEquals(emptyList(), gatewayClient.fetchGrades())
+    }
 }

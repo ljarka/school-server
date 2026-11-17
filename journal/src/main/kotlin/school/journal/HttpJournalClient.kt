@@ -40,7 +40,12 @@ class HttpJournalClient(
     }
 
     override fun fetchGrades(): List<Grade> {
-        val gradesRaw = getApiJson(ProtocolPaths.API_GRADES_PATH)
+        val gradesRaw = try {
+            getApiJson(ProtocolPaths.API_GRADES_PATH)
+        } catch (_: GatewayAccessDeniedException) {
+            logger.info("e-journal grades resource not available for this account; continuing without grades")
+            return emptyList()
+        }
         val gradesResponse = try {
             json.decodeFromString<GradesResponseDto>(gradesRaw)
         } catch (e: Exception) {
@@ -223,6 +228,9 @@ class HttpJournalClient(
             "User-Agent" to BROWSER_USER_AGENT,
         )
         val first = session.get(url = url, headers = headers)
+        if (first.code == 403 && first.body.contains("\"AccessDeny\"")) {
+            throw GatewayAccessDeniedException()
+        }
         if (first.code == 401 || first.code == 403) {
             logger.debug("e-journal gateway returned {}, re-authenticating", first.code)
             performGatewayLogin()
@@ -486,6 +494,8 @@ class HttpJournalClient(
             lower.contains("2fa") ||
             lower.contains("verification_code")
     }
+
+    private class GatewayAccessDeniedException : Exception()
 
     private companion object {
         const val MAX_MESSAGE_PAGES = 50

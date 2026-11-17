@@ -379,16 +379,21 @@ class HttpJournalClient(
 
     private fun performGatewayLogin() {
         val initUrl = endpoints.gatewayUrl(
-            "${ProtocolPaths.GATEWAY_PORTAL_INIT_PATH}?v=${System.currentTimeMillis() / 1000.0}",
+            "${ProtocolPaths.GATEWAY_PORTAL_INIT_PATH}?v=${System.currentTimeMillis() / 1000}",
         )
         val initRes = session.get(
             url = initUrl,
-            headers = mapOf("Referer" to endpoints.portalUrl("/")),
+            headers = mapOf("User-Agent" to BROWSER_USER_AGENT),
         )
         checkGatewayStep(initRes)
 
         val authUrl = endpoints.apiOriginUrl(ProtocolPaths.OAUTH_AUTHORIZATION_PATH)
-        checkGatewayStep(session.get(authUrl))
+        checkGatewayStep(
+            session.get(
+                url = authUrl,
+                headers = mapOf("User-Agent" to BROWSER_USER_AGENT),
+            ),
+        )
 
         val formBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -402,6 +407,7 @@ class HttpJournalClient(
             body = formBody,
             headers = mapOf(
                 "Accept" to "application/json",
+                "User-Agent" to BROWSER_USER_AGENT,
                 "X-Requested-With" to "XMLHttpRequest",
                 "X-Baner" to createBanerHeader(),
                 "Referer" to authUrl,
@@ -422,12 +428,13 @@ class HttpJournalClient(
             throw AuthRejected("rejected")
         }
 
-        val performUrl = endpoints.apiOriginUrl(ProtocolPaths.OAUTH_PERFORM_LOGIN_PATH)
-        checkGatewayStep(session.get(performUrl))
-        checkGatewayStep(session.get(performUrl))
-
-        val grantUrl = endpoints.apiOriginUrl(ProtocolPaths.OAUTH_GRANT_PATH)
-        checkGatewayStep(session.get(grantUrl))
+        val twoFaUrl = endpoints.apiOriginUrl(ProtocolPaths.OAUTH_2FA_PATH)
+        checkGatewayStep(
+            session.get(
+                url = twoFaUrl,
+                headers = mapOf("User-Agent" to BROWSER_USER_AGENT),
+            ),
+        )
 
         val tokenInfoRes = session.get(
             url = endpoints.gatewayUrl(ProtocolPaths.GATEWAY_TOKEN_INFO_PATH),

@@ -114,9 +114,7 @@ class HttpJournalClientGradesTest {
         server.enqueue(MockResponse(code = 200, body = "ok")) // portal init
         server.enqueue(MockResponse(code = 200, body = "auth")) // GET OAuth/Authorization
         server.enqueue(MockResponse(code = 200, body = """{"status":"ok"}""")) // POST credentials
-        server.enqueue(MockResponse(code = 200, body = "ok")) // PerformLogin 1
-        server.enqueue(MockResponse(code = 200, body = "ok")) // PerformLogin 2
-        server.enqueue(MockResponse(code = 200, body = "ok")) // Grant
+        server.enqueue(MockResponse(code = 200, body = "ok")) // 2FA -> Grant
         server.enqueue(MockResponse(code = 200, body = """{"UserIdentifier":"1234567u"}""")) // TokenInfo
         server.enqueue(MockResponse(code = 200, body = "{}")) // UserInfo
         server.enqueue(

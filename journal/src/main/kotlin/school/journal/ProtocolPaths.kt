@@ -24,8 +24,7 @@ internal object ProtocolPaths {
 
     const val GATEWAY_PORTAL_INIT_PATH = "/loguj/portalRodzina"
     const val OAUTH_AUTHORIZATION_PATH = "/OAuth/Authorization?client_id=46"
-    const val OAUTH_PERFORM_LOGIN_PATH = "/OAuth/Authorization/PerformLogin?client_id=46"
-    const val OAUTH_GRANT_PATH = "/OAuth/Authorization/Grant?client_id=46"
+    const val OAUTH_2FA_PATH = "/OAuth/Authorization/2FA?client_id=46"
     const val GATEWAY_API_PREFIX = "/gateway/api/2.0"
     const val GATEWAY_TOKEN_INFO_PATH = "/gateway/api/2.0/Auth/TokenInfo"
     const val GATEWAY_USER_INFO_PATH = "/gateway/api/2.0/Auth/UserInfo"

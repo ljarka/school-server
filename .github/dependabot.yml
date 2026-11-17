@@ -20,6 +20,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Stay on the JDK 21 LTS line (AGENTS.md, ADR 0001; jvmToolchain(21)). A move to the next LTS is a
+      # deliberate change (toolchain + images together), not an automatic bump to a short-lived release.
+      - dependency-name: eclipse-temurin
+        update-types: ['version-update:semver-major']
     groups:
       docker:
         patterns: ['*']

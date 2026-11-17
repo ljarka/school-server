@@ -21,14 +21,17 @@ curl -H "X-School-Key: $KEY" https://school.example.com/api/v1/status
 
 ## 2. The usual integration (e.g. a "School" screen)
 
-1. **On first setup**: `GET /api/v1/status` → save `lastEventId` as your cursor if you only
+1. **List children** (when there are several): `GET /api/v1/children` → pass `?child=<id_or_login>`
+   on `/grades`, `/grades/subjects`, `/messages`, `/messages/{id}`, `/messages/read-all`, and
+   `/changes` (omit `child` to read all children).
+2. **On first setup**: `GET /api/v1/status` → save `lastEventId` as your cursor if you only
    want news from now on; or keep cursor `0` to receive everything once.
-2. **Show current data**: `GET /api/v1/grades/subjects` and `GET /api/v1/messages?unread=true`.
-3. **Poll for news** every few minutes (the server itself refreshes every 15 min):
+3. **Show current data**: `GET /api/v1/grades/subjects` and `GET /api/v1/messages?unread=true`.
+4. **Poll for news** every few minutes (the server itself refreshes every 15 min):
    `GET /api/v1/changes?after=<cursor>&limit=100`; process `items`; save `nextCursor`;
    repeat while `hasMore` is `true`.
-4. **Open a message**: `GET /api/v1/messages/{id}`, then `PUT /api/v1/messages/{id}/read`.
-5. **Health badge**: if `/api/v1/status` has `auth: "auth_failed"` or `lastSuccessfulSyncAt`
+5. **Open a message**: `GET /api/v1/messages/{id}`, then `PUT /api/v1/messages/{id}/read`.
+6. **Health badge**: if `/api/v1/status` has `auth: "auth_failed"` or `lastSuccessfulSyncAt`
    older than an hour, show "school data not up to date".
 
 ```text

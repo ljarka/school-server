@@ -52,7 +52,7 @@ never "no announcements" (ADR 0014).
   - `GET /api/v1/announcements?child=` — list, newest first; optional `active=true` filter
     (today within `validFrom..validTo`).
   - `GET /api/v1/announcements/{id}` — one announcement.
-  - `POST /api/v1/announcements/{id}/read`, `DELETE` same path, `POST /api/v1/announcements/read-all`
+  - `PUT /api/v1/announcements/{id}/read`, `DELETE` same path, `POST /api/v1/announcements/read-all`
     — local read state, same semantics as messages.
   - `EntityType` enum gains `announcement` (additive; clients already must tolerate unknown values).
   - `/status` reports announcements sync like the other sources.

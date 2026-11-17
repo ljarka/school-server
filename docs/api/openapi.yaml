@@ -485,7 +485,7 @@ components:
           required: [bodyText, bodyHtml, attachments]
           properties:
             bodyText: { type: string }
-            bodyHtml: { type: string, description: Sanitised HTML, safe to render. }
+            bodyHtml: { type: string, description: "Sanitised HTML, safe to render." }
             attachments:
               type: array
               items: { $ref: '#/components/schemas/Attachment' }

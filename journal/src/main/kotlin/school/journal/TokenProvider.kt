@@ -5,27 +5,43 @@ import school.model.JournalUnavailable
 
 internal class TokenProvider {
     private val logger = LoggerFactory.getLogger(TokenProvider::class.java)
-    private var currentAccount: PortalAccountDto? = null
+    private val accountsById = LinkedHashMap<String, PortalAccountDto>()
 
     @Synchronized
-    fun setAccount(account: PortalAccountDto) {
-        currentAccount = account
+    fun setAccounts(accounts: List<PortalAccountDto>) {
+        accountsById.clear()
+        for (account in accounts) {
+            accountsById[account.id.toString()] = account
+        }
     }
 
     @Synchronized
-    fun currentToken(): String? = currentAccount?.accessToken
+    fun listAccounts(): List<PortalAccountDto> = accountsById.values.toList()
 
     @Synchronized
-    fun currentLogin(): String? = currentAccount?.login
+    fun currentAccount(childId: String? = null): PortalAccountDto? {
+        if (childId == null) {
+            return accountsById.values.firstOrNull()
+        }
+        return accountsById[childId]
+            ?: accountsById.values.firstOrNull { it.login == childId }
+    }
 
     @Synchronized
-    fun refresh(fetchFresh: (login: String) -> PortalAccountDto?, relogin: () -> PortalAccountDto): String {
-        val login = currentAccount?.login
-        if (login != null) {
-            val fresh = runCatching { fetchFresh(login) }.getOrNull()
+    fun currentToken(childId: String? = null): String? = currentAccount(childId)?.accessToken
+
+    @Synchronized
+    fun refresh(
+        childId: String? = null,
+        fetchFresh: (login: String) -> PortalAccountDto?,
+        relogin: () -> List<PortalAccountDto>,
+    ): String {
+        val current = currentAccount(childId)
+        if (current != null) {
+            val fresh = runCatching { fetchFresh(current.login) }.getOrNull()
             if (fresh != null) {
                 logger.debug("e-journal child token refreshed")
-                currentAccount = fresh
+                accountsById[fresh.id.toString()] = fresh
                 return fresh.accessToken
             }
         }
@@ -37,8 +53,10 @@ internal class TokenProvider {
             throw JournalUnavailable("auth_refresh_failed", e)
         }
 
-        currentAccount = relogged
+        setAccounts(relogged)
+        val target = currentAccount(childId)
+            ?: throw JournalUnavailable("auth_refresh_failed")
         logger.debug("e-journal session and child token refreshed")
-        return relogged.accessToken
+        return target.accessToken
     }
 }

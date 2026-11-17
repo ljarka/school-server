@@ -17,6 +17,7 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import org.slf4j.LoggerFactory
 import school.model.AuthRejected
+import school.model.ChildAccount
 import school.model.Grade
 import school.model.JournalClient
 import school.model.JournalUnavailable
@@ -171,91 +172,111 @@ class SyncService(
         val runId = store.insertSyncRun(startedAt)
 
         return try {
-            val fetchOutcome = withContext(ioDispatcher) {
+            val outcomes = withContext(ioDispatcher) {
                 if (!sessionLoggedIn) {
                     journal.login()
                     sessionLoggedIn = true
                 }
 
-                var grades: List<Grade>? = null
-                var gradesError: String? = null
-                try {
-                    grades = journal.fetchGrades()
-                } catch (e: AuthRejected) {
-                    throw e
-                } catch (e: JournalUnavailable) {
-                    gradesError = e.message ?: "journal_unavailable"
+                val discovered = journal.listChildren()
+                if (discovered.isNotEmpty()) {
+                    store.upsertChildAccounts(discovered, clock.now())
+                }
+                val targets = discovered.ifEmpty {
+                    listOf(ChildAccount(id = "default", login = "default", name = "default"))
                 }
 
-                var messages: List<Message>? = null
-                var messagesError: String? = null
-                try {
-                    val headers = journal.fetchMessageHeaders()
-                    val existingById = store.listMessages(
-                        includeDeleted = true,
-                        limit = 10_000,
-                    ).associateBy { it.sourceId }
-
-                    messages = headers.map { header ->
-                        val existing = existingById[header.sourceId]
-                        if (existing != null && headerMatches(existing, header)) {
-                            Message(
-                                sourceId = existing.sourceId,
-                                sender = existing.sender,
-                                subject = existing.subject,
-                                sentAt = existing.sentAt,
-                                bodyText = existing.bodyText!!,
-                                bodyHtml = existing.bodyHtml ?: existing.bodyText,
-                                attachments = existing.attachments,
-                            )
-                        } else {
-                            journal.fetchMessage(header.sourceId)
-                        }
+                targets.map { child ->
+                    var grades: List<Grade>? = null
+                    var gradesError: String? = null
+                    try {
+                        grades = journal.fetchGrades(child.id)
+                    } catch (e: AuthRejected) {
+                        throw e
+                    } catch (e: JournalUnavailable) {
+                        gradesError = e.message ?: "journal_unavailable"
                     }
-                } catch (e: AuthRejected) {
-                    throw e
-                } catch (e: JournalUnavailable) {
-                    messagesError = e.message ?: "journal_unavailable"
-                }
 
-                FetchOutcome(
-                    grades = grades,
-                    gradesError = gradesError,
-                    messages = messages,
-                    messagesError = messagesError,
-                )
+                    var messages: List<Message>? = null
+                    var messagesError: String? = null
+                    try {
+                        val headers = journal.fetchMessageHeaders(child.id)
+                        val existingById = store.listMessages(
+                            includeDeleted = true,
+                            limit = 10_000,
+                            childId = child.id,
+                        ).associateBy { it.sourceId }
+
+                        messages = headers.map { header ->
+                            val existing = existingById[header.sourceId]
+                            if (existing != null && headerMatches(existing, header)) {
+                                Message(
+                                    sourceId = existing.sourceId,
+                                    sender = existing.sender,
+                                    subject = existing.subject,
+                                    sentAt = existing.sentAt,
+                                    bodyText = existing.bodyText!!,
+                                    bodyHtml = existing.bodyHtml ?: existing.bodyText,
+                                    attachments = existing.attachments,
+                                )
+                            } else {
+                                journal.fetchMessage(header.sourceId, child.id)
+                            }
+                        }
+                    } catch (e: AuthRejected) {
+                        throw e
+                    } catch (e: JournalUnavailable) {
+                        messagesError = e.message ?: "journal_unavailable"
+                    }
+
+                    ChildFetchOutcome(
+                        childId = child.id,
+                        grades = grades,
+                        gradesError = gradesError,
+                        messages = messages,
+                        messagesError = messagesError,
+                    )
+                }
             }
 
             val finishedAt = clock.now()
-            val gradeChanges = if (fetchOutcome.grades != null) {
-                detector.diffGrades(
-                    stored = store.listGrades(includeDeleted = true),
-                    fresh = fetchOutcome.grades,
-                    complete = true,
+            var changesCount = 0
+            var itemsFetched = 0
+            var firstError: String? = null
+
+            for (outcome in outcomes) {
+                val gradeChanges = if (outcome.grades != null) {
+                    detector.diffGrades(
+                        stored = store.listGrades(includeDeleted = true, childId = outcome.childId),
+                        fresh = outcome.grades,
+                        complete = true,
+                    )
+                } else {
+                    Changes()
+                }
+
+                val messageChanges = if (outcome.messages != null) {
+                    detector.diffMessages(
+                        stored = store.listMessages(includeDeleted = true, limit = 10_000, childId = outcome.childId),
+                        fresh = outcome.messages,
+                        complete = true,
+                    )
+                } else {
+                    Changes()
+                }
+
+                changesCount += store.applyChanges(
+                    syncRunId = runId,
+                    gradeChanges = gradeChanges,
+                    messageChanges = messageChanges,
+                    now = finishedAt,
+                    childId = outcome.childId,
                 )
-            } else {
-                Changes()
+                itemsFetched += (outcome.grades?.size ?: 0) + (outcome.messages?.size ?: 0)
+                if (firstError == null) {
+                    firstError = outcome.gradesError ?: outcome.messagesError
+                }
             }
-
-            val messageChanges = if (fetchOutcome.messages != null) {
-                detector.diffMessages(
-                    stored = store.listMessages(includeDeleted = true, limit = 10_000),
-                    fresh = fetchOutcome.messages,
-                    complete = true,
-                )
-            } else {
-                Changes()
-            }
-
-            val changesCount = store.applyChanges(
-                syncRunId = runId,
-                gradeChanges = gradeChanges,
-                messageChanges = messageChanges,
-                now = finishedAt,
-            )
-
-            val itemsFetched = (fetchOutcome.grades?.size ?: 0) + (fetchOutcome.messages?.size ?: 0)
-            val firstError = fetchOutcome.gradesError ?: fetchOutcome.messagesError
 
             if (firstError != null) {
                 consecutiveErrors += 1
@@ -335,7 +356,8 @@ class SyncService(
             existing.sentAt == header.sentAt &&
             existing.hasAttachments == header.hasAttachments
 
-    private data class FetchOutcome(
+    private data class ChildFetchOutcome(
+        val childId: String,
         val grades: List<Grade>?,
         val gradesError: String?,
         val messages: List<Message>?,

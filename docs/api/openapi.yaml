@@ -62,12 +62,33 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
+  /api/v1/children:
+    get:
+      tags: [Children]
+      summary: List linked child accounts
+      operationId: listChildren
+      responses:
+        '200':
+          description: Linked child accounts synced by this server
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [children]
+                properties:
+                  children:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChildAccount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
   /api/v1/grades:
     get:
       tags: [Grades]
       summary: List grades
       operationId: listGrades
       parameters:
+        - $ref: '#/components/parameters/ChildFilter'
         - name: subject
           in: query
           description: Exact subject name as returned in `Grade.subject`.
@@ -106,6 +127,7 @@ paths:
       summary: Grades grouped by subject, with weighted average
       operationId: listSubjects
       parameters:
+        - $ref: '#/components/parameters/ChildFilter'
         - name: semester
           in: query
           schema: { type: integer, enum: [1, 2] }
@@ -132,6 +154,7 @@ paths:
       summary: List received messages (without body), newest first
       operationId: listMessages
       parameters:
+        - $ref: '#/components/parameters/ChildFilter'
         - name: unread
           in: query
           description: '`true` = only messages not marked read on this server.'
@@ -220,6 +243,8 @@ paths:
       tags: [Messages]
       summary: Mark every message as read (on this server only)
       operationId: markAllMessagesRead
+      parameters:
+        - $ref: '#/components/parameters/ChildFilter'
       responses:
         '200':
           description: How many were changed
@@ -243,6 +268,7 @@ paths:
         `lastEventId` in `/api/v1/status`.
       operationId: listChanges
       parameters:
+        - $ref: '#/components/parameters/ChildFilter'
         - name: after
           in: query
           description: Return events with `id` greater than this. Default 0. Not with `since`.
@@ -320,6 +346,11 @@ components:
       in: query
       description: Include items that disappeared from the e-journal (`deletedAt` set).
       schema: { type: boolean, default: false }
+    ChildFilter:
+      name: child
+      in: query
+      description: Filter by child `id` or `login` from `/api/v1/children`.
+      schema: { type: string }
 
   responses:
     BadRequest:
@@ -378,12 +409,21 @@ components:
       type: string
       enum: [regular, proposed_semester, semester, proposed_final, final]
 
+    ChildAccount:
+      type: object
+      required: [id, login, name]
+      properties:
+        id: { type: string }
+        login: { type: string }
+        name: { type: string }
+
     Grade:
       type: object
-      required: [id, subject, value, numericValue, weight, category, semester, kind,
+      required: [id, childId, subject, value, numericValue, weight, category, semester, kind,
                  countsToAverage, teacher, comment, issuedOn, firstSeenAt, updatedAt, deletedAt]
       properties:
         id: { type: string, example: g_8812 }
+        childId: { type: string }
         subject: { type: string, example: Matematyka }
         value: { type: string, description: 'As shown in the e-journal: "5", "4+", "np", "+"', example: '4+' }
         numericValue: { type: [number, 'null'], description: '"4+" → 4.5, "3-" → 2.75; null when not a number', example: 4.5 }
@@ -419,9 +459,10 @@ components:
 
     MessageSummary:
       type: object
-      required: [id, sender, subject, sentAt, hasAttachments, read, readAt, deletedAt]
+      required: [id, childId, sender, subject, sentAt, hasAttachments, read, readAt, deletedAt]
       properties:
         id: { type: string, example: m_4471 }
+        childId: { type: string }
         sender: { type: string }
         subject: { type: string }
         sentAt: { type: string, format: date-time }
@@ -444,9 +485,10 @@ components:
 
     ChangeEvent:
       type: object
-      required: [id, entityType, entityId, changeType, detectedAt, entity, diff]
+      required: [id, childId, entityType, entityId, changeType, detectedAt, entity, diff]
       properties:
         id: { type: integer, description: Monotonic cursor }
+        childId: { type: string }
         entityType: { $ref: '#/components/schemas/EntityType' }
         entityId: { type: string }
         changeType: { type: string, enum: [created, updated, deleted] }

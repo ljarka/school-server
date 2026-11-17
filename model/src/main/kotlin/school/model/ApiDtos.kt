@@ -7,8 +7,15 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
+data class ChildAccountDto(val id: String, val login: String, val name: String)
+
+@Serializable
+data class ChildrenListDto(val children: List<ChildAccountDto>)
+
+@Serializable
 data class GradeDto(
     val id: String,
+    val childId: String = "default",
     val subject: String,
     val value: String,
     val numericValue: Double?,
@@ -37,6 +44,7 @@ data class SubjectsListDto(val items: List<SubjectSummaryDto>)
 @Serializable
 data class MessageSummaryDto(
     val id: String,
+    val childId: String = "default",
     val sender: String,
     val subject: String,
     val sentAt: Instant,
@@ -52,6 +60,7 @@ data class MessagesPageDto(val items: List<MessageSummaryDto>, val nextCursor: S
 @Serializable
 data class MessageDetailDto(
     val id: String,
+    val childId: String = "default",
     val sender: String,
     val subject: String,
     val sentAt: Instant,
@@ -73,6 +82,7 @@ data class SyncStartedResponseDto(val status: String = "started")
 @Serializable
 data class ChangeEventDto(
     val id: Long,
+    val childId: String = "default",
     val entityType: EntityType,
     val entityId: String,
     val changeType: ChangeType,

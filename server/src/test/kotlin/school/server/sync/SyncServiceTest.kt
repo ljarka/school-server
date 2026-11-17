@@ -53,18 +53,18 @@ class SyncServiceTest {
             loginError?.let { throw it }
         }
 
-        override fun fetchGrades(): List<Grade> {
+        override fun fetchGrades(childId: String?): List<Grade> {
             onFetchGrades?.invoke()
             gradesError?.let { throw it }
             return grades
         }
 
-        override fun fetchMessageHeaders(): List<MessageHeader> {
+        override fun fetchMessageHeaders(childId: String?): List<MessageHeader> {
             headersError?.let { throw it }
             return headers
         }
 
-        override fun fetchMessage(sourceId: String): Message {
+        override fun fetchMessage(sourceId: String, childId: String?): Message {
             fetchedMessageIds += sourceId
             return messagesById[sourceId] ?: error("Missing fake message $sourceId")
         }

@@ -11,6 +11,7 @@ import school.server.store.StoredMessage
 
 internal fun StoredGrade.toDto(): GradeDto = GradeDto(
     id = grade.sourceId,
+    childId = childId,
     subject = grade.subject,
     value = grade.value,
     numericValue = grade.numericValue,
@@ -29,6 +30,7 @@ internal fun StoredGrade.toDto(): GradeDto = GradeDto(
 
 internal fun StoredMessage.toSummaryDto(): MessageSummaryDto = MessageSummaryDto(
     id = sourceId,
+    childId = childId,
     sender = sender,
     subject = subject,
     sentAt = sentAt,
@@ -40,6 +42,7 @@ internal fun StoredMessage.toSummaryDto(): MessageSummaryDto = MessageSummaryDto
 
 internal fun StoredMessage.toDetailDto(): MessageDetailDto = MessageDetailDto(
     id = sourceId,
+    childId = childId,
     sender = sender,
     subject = subject,
     sentAt = sentAt,

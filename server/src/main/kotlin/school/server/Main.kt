@@ -31,6 +31,7 @@ import school.journal.JournalEndpoints
 import school.server.api.ApiErrorResponse
 import school.server.api.ErrorBody
 import school.server.api.changesRoutes
+import school.server.api.childrenRoutes
 import school.server.api.configureStatusPages
 import school.server.api.docsRoutes
 import school.server.api.gradesRoutes
@@ -151,6 +152,7 @@ fun Application.schoolModule(
                 this.limiter = limiter
             }
             if (store != null) {
+                childrenRoutes(store)
                 gradesRoutes(store)
                 messagesRoutes(store, clock)
                 changesRoutes(store)

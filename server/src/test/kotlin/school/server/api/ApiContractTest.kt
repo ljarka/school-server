@@ -335,11 +335,11 @@ class ApiContractTest {
         val failingJournal = object : JournalClient {
             override fun login() = throw AuthRejected("rejected")
 
-            override fun fetchGrades(): List<Grade> = emptyList()
+            override fun fetchGrades(childId: String?): List<Grade> = emptyList()
 
-            override fun fetchMessageHeaders(): List<MessageHeader> = emptyList()
+            override fun fetchMessageHeaders(childId: String?): List<MessageHeader> = emptyList()
 
-            override fun fetchMessage(sourceId: String): Message = error("unused")
+            override fun fetchMessage(sourceId: String, childId: String?): Message = error("unused")
         }
         val syncService = SyncService(journal = failingJournal, store = store, clock = FakeClock(t0))
 
@@ -356,5 +356,87 @@ class ApiContractTest {
         val afterAuthFail = client.post("/api/v1/sync") { header("X-School-Key", "test-key") }
         assertEquals(HttpStatusCode.Conflict, afterAuthFail.status)
         assertTrue(afterAuthFail.bodyAsText().contains("AUTH_FAILED"))
+    }
+
+    @Test
+    fun `children endpoint and child query filter work across grades, messages, and changes`() = testApplication {
+        val dbPath = File(tempDir, "multi_child.db").absolutePath
+        val store = openStore("multi_child.db")
+        store.upsertChildAccounts(
+            listOf(
+                school.model.ChildAccount(id = "101", login = "111u", name = "Ala Kowalska"),
+                school.model.ChildAccount(id = "102", login = "222u", name = "Jan Kowalski"),
+            ),
+            now = t0,
+        )
+        val detector = ChangeDetector()
+        val runId = store.insertSyncRun(t0)
+        val g1 = Grade(
+            "g_1",
+            "Matematyka",
+            "5",
+            5.0,
+            2,
+            "Kartkówka",
+            1,
+            GradeKind.REGULAR,
+            true,
+            "Jan Kowalski",
+            null,
+            LocalDate.parse("2026-11-10"),
+        )
+        val m1 = Message("m_1", "Anna", "Temat 1", t0, "Treść 1", "<p>Treść 1</p>", emptyList())
+        val g2 = Grade(
+            "g_2",
+            "Fizyka",
+            "4",
+            4.0,
+            2,
+            "Sprawdzian",
+            1,
+            GradeKind.REGULAR,
+            true,
+            "Jan Kowalski",
+            null,
+            LocalDate.parse("2026-11-11"),
+        )
+        val m2 = Message("m_2", "Jan", "Temat 2", t0, "Treść 2", "<p>Treść 2</p>", emptyList())
+
+        store.applyChanges(
+            syncRunId = runId,
+            gradeChanges = detector.diffGrades(emptyList(), listOf(g1), complete = true),
+            messageChanges = detector.diffMessages(emptyList(), listOf(m1), complete = true),
+            now = t0,
+            childId = "101",
+        )
+        store.applyChanges(
+            syncRunId = runId,
+            gradeChanges = detector.diffGrades(emptyList(), listOf(g2), complete = true),
+            messageChanges = detector.diffMessages(emptyList(), listOf(m2), complete = true),
+            now = t0,
+            childId = "102",
+        )
+        store.finishSyncRun(runId, t0, school.model.SyncRunStatus.OK, null, 4, 4)
+
+        application { schoolModule(testConfig(dbPath), store = store) }
+
+        val childrenRes = client.get("/api/v1/children") { header("X-School-Key", "test-key") }
+        assertEquals(HttpStatusCode.OK, childrenRes.status)
+        val childrenBody = json.decodeFromString<school.model.ChildrenListDto>(childrenRes.bodyAsText())
+        assertEquals(listOf("101", "102"), childrenBody.children.map { it.id })
+
+        val child1Grades = client.get("/api/v1/grades?child=101") { header("X-School-Key", "test-key") }
+        val child1GradesDto = json.decodeFromString<GradesListDto>(child1Grades.bodyAsText())
+        assertEquals(listOf("g_1"), child1GradesDto.items.map { it.id })
+        assertEquals("101", child1GradesDto.items.single().childId)
+
+        val child2ByLogin = client.get("/api/v1/messages?child=222u") { header("X-School-Key", "test-key") }
+        val child2MsgsDto = json.decodeFromString<MessagesPageDto>(child2ByLogin.bodyAsText())
+        assertEquals(listOf("m_2"), child2MsgsDto.items.map { it.id })
+        assertEquals("102", child2MsgsDto.items.single().childId)
+
+        val child2Changes = client.get("/api/v1/changes?child=102") { header("X-School-Key", "test-key") }
+        val child2ChangesDto = json.decodeFromString<ChangePageDto>(child2Changes.bodyAsText())
+        assertEquals(listOf("g_2", "m_2"), child2ChangesDto.items.map { it.entityId })
     }
 }

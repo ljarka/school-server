@@ -40,14 +40,15 @@ fun Route.changesRoutes(store: Store) {
             0L
         }
 
+        val childId = store.resolveChildId(call.request.queryParameters["child"])
         val since = parseInstantParam(sinceRaw, "since")
         val type = parseEntityTypeParam(call.request.queryParameters["type"])
         val limit = parseIntParam(call.request.queryParameters["limit"], "limit", default = 100, min = 1, max = 500)
 
         val rows = if (since != null) {
-            store.listChangeEventsSince(since = since, entityType = type, limit = limit + 1)
+            store.listChangeEventsSince(since = since, entityType = type, limit = limit + 1, childId = childId)
         } else {
-            store.listChangeEventsAfter(afterId = afterId, entityType = type, limit = limit + 1)
+            store.listChangeEventsAfter(afterId = afterId, entityType = type, limit = limit + 1, childId = childId)
         }
 
         val hasMore = rows.size > limit
@@ -56,12 +57,12 @@ fun Route.changesRoutes(store: Store) {
         val items = pageRows.map { event ->
             val entityElement = when (event.entityType) {
                 EntityType.GRADE -> {
-                    val grade = store.getGrade(event.entityId)
+                    val grade = store.getGrade(event.entityId, event.childId)
                         ?: error("Missing grade ${event.entityId} for change event ${event.id}")
                     json.encodeToJsonElement(grade.toDto())
                 }
                 EntityType.MESSAGE -> {
-                    val message = store.getMessage(event.entityId)
+                    val message = store.getMessage(event.entityId, event.childId)
                         ?: error("Missing message ${event.entityId} for change event ${event.id}")
                     json.encodeToJsonElement(message.toSummaryDto())
                 }
@@ -70,6 +71,7 @@ fun Route.changesRoutes(store: Store) {
 
             ChangeEventDto(
                 id = event.id,
+                childId = event.childId,
                 entityType = event.entityType,
                 entityId = event.entityId,
                 changeType = event.changeType,

@@ -79,6 +79,9 @@ data class Grade(
 data class Attachment(val name: String)
 
 @Serializable
+data class ChildAccount(val id: String, val login: String, val name: String)
+
+@Serializable
 data class MessageHeader(
     val sourceId: String,
     val sender: String,

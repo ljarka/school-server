@@ -8,9 +8,11 @@ interface JournalClient {
      */
     fun login()
 
-    fun fetchGrades(): List<Grade>
+    fun listChildren(): List<ChildAccount> = emptyList()
 
-    fun fetchMessageHeaders(): List<MessageHeader>
+    fun fetchGrades(childId: String? = null): List<Grade>
 
-    fun fetchMessage(sourceId: String): Message
+    fun fetchMessageHeaders(childId: String? = null): List<MessageHeader>
+
+    fun fetchMessage(sourceId: String, childId: String? = null): Message
 }

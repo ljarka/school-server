@@ -6,6 +6,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import school.model.Attachment
 import school.model.ChangeType
+import school.model.ChildAccount
 import school.model.EntityType
 import school.model.Grade
 import school.model.GradeKind
@@ -17,6 +18,7 @@ import school.server.sync.Changes
 
 data class StoredGrade(
     val grade: Grade,
+    val childId: String = "default",
     val contentHash: String,
     val firstSeenAt: Instant,
     val updatedAt: Instant,
@@ -25,6 +27,7 @@ data class StoredGrade(
 
 data class StoredMessage(
     val sourceId: String,
+    val childId: String = "default",
     val sender: String,
     val subject: String,
     val bodyText: String?,
@@ -42,6 +45,7 @@ data class StoredMessage(
 
 data class StoredChangeEvent(
     val id: Long,
+    val childId: String = "default",
     val entityType: EntityType,
     val entityId: String,
     val changeType: ChangeType,
@@ -67,14 +71,36 @@ class Store(private val db: SchoolDatabase) {
         block()
     }
 
+    fun upsertChildAccounts(children: List<ChildAccount>, now: Instant) = transaction {
+        for (child in children) {
+            db.schemaQueries.upsertChildAccount(
+                id = child.id,
+                login = child.login,
+                name = child.name,
+                updated_at = now.toString(),
+            )
+        }
+    }
+
+    fun listChildAccounts(): List<ChildAccount> = db.schemaQueries.listChildAccounts().executeAsList().map {
+        ChildAccount(id = it.id, login = it.login, name = it.name)
+    }
+
+    fun resolveChildId(selector: String?): String? {
+        val trimmed = selector?.trim()?.ifEmpty { null } ?: return null
+        return db.schemaQueries.findChildAccount(trimmed).executeAsOneOrNull()?.id ?: trimmed
+    }
+
     fun upsertGrade(
         grade: Grade,
         contentHash: String,
         now: Instant,
         firstSeenAt: Instant = now,
         deletedAt: Instant? = null,
+        childId: String = "default",
     ) {
         db.schemaQueries.upsertGrade(
+            child_id = childId,
             source_id = grade.sourceId,
             subject = grade.subject,
             value_ = grade.value,
@@ -94,22 +120,27 @@ class Store(private val db: SchoolDatabase) {
         )
     }
 
-    fun softDeleteGrade(sourceId: String, now: Instant) {
+    fun softDeleteGrade(sourceId: String, now: Instant, childId: String = "default") {
         db.schemaQueries.softDeleteGrade(
             deleted_at = now.toString(),
             updated_at = now.toString(),
+            child_id = childId,
             source_id = sourceId,
         )
     }
 
-    fun getGrade(sourceId: String): StoredGrade? =
-        db.schemaQueries.selectGradeById(sourceId).executeAsOneOrNull()?.toStoredGrade()
+    fun getGrade(sourceId: String, childId: String = "default"): StoredGrade? =
+        db.schemaQueries.selectGradeById(child_id = childId, source_id = sourceId)
+            .executeAsOneOrNull()
+            ?.toStoredGrade()
 
     fun listGrades(
         semester: Int? = null,
         subject: String? = null,
         includeDeleted: Boolean = false,
+        childId: String? = null,
     ): List<StoredGrade> = db.schemaQueries.listGrades(
+        childId = childId,
         includeDeleted = if (includeDeleted) 1L else 0L,
         semester = semester?.toLong(),
         subject = subject,
@@ -124,8 +155,10 @@ class Store(private val db: SchoolDatabase) {
         now: Instant,
         firstSeenAt: Instant = now,
         deletedAt: Instant? = null,
+        childId: String = "default",
     ) {
         db.schemaQueries.upsertMessage(
+            child_id = childId,
             source_id = header.sourceId,
             sender = header.sender,
             subject = header.subject,
@@ -147,8 +180,10 @@ class Store(private val db: SchoolDatabase) {
         now: Instant,
         firstSeenAt: Instant = now,
         deletedAt: Instant? = null,
+        childId: String = "default",
     ) {
         db.schemaQueries.upsertMessage(
+            child_id = childId,
             source_id = message.sourceId,
             sender = message.sender,
             subject = message.subject,
@@ -164,40 +199,49 @@ class Store(private val db: SchoolDatabase) {
         )
     }
 
-    fun softDeleteMessage(sourceId: String, now: Instant) {
+    fun softDeleteMessage(sourceId: String, now: Instant, childId: String = "default") {
         db.schemaQueries.softDeleteMessage(
             deleted_at = now.toString(),
             updated_at = now.toString(),
+            child_id = childId,
             source_id = sourceId,
         )
     }
 
-    fun getMessage(sourceId: String): StoredMessage? =
-        db.schemaQueries.selectMessageById(sourceId).executeAsOneOrNull()?.toStoredMessage()
+    fun getMessage(sourceId: String, childId: String? = null): StoredMessage? =
+        db.schemaQueries.selectMessageById(sourceId = sourceId, childId = childId)
+            .executeAsOneOrNull()
+            ?.toStoredMessage()
 
     fun listMessages(
         unreadOnly: Boolean = false,
         includeDeleted: Boolean = false,
         limit: Int = 50,
         offset: Int = 0,
+        childId: String? = null,
     ): List<StoredMessage> = db.schemaQueries.listMessages(
+        childId = childId,
         includeDeleted = if (includeDeleted) 1L else 0L,
         unreadOnly = if (unreadOnly) 1L else 0L,
         limit = limit.toLong(),
         offset = offset.toLong(),
     ).executeAsList().map { it.toStoredMessage() }
 
-    fun markMessageRead(sourceId: String, now: Instant) {
-        db.schemaQueries.markMessageRead(readAt = now.toString(), sourceId = sourceId)
+    fun markMessageRead(sourceId: String, now: Instant, childId: String? = null) {
+        db.schemaQueries.markMessageRead(readAt = now.toString(), sourceId = sourceId, childId = childId)
     }
 
-    fun markMessageUnread(sourceId: String) {
-        db.schemaQueries.markMessageUnread(source_id = sourceId)
+    fun markMessageUnread(sourceId: String, childId: String? = null) {
+        db.schemaQueries.markMessageUnread(sourceId = sourceId, childId = childId)
     }
 
-    fun markAllMessagesRead(now: Instant): Long {
-        val unread = countUnreadMessages()
-        db.schemaQueries.markAllMessagesRead(read_at = now.toString())
+    fun markAllMessagesRead(now: Instant, childId: String? = null): Long {
+        val unread = if (childId == null) {
+            countUnreadMessages()
+        } else {
+            listMessages(unreadOnly = true, includeDeleted = false, limit = 10_000, childId = childId).size.toLong()
+        }
+        db.schemaQueries.markAllMessagesRead(readAt = now.toString(), childId = childId)
         return unread
     }
 
@@ -240,6 +284,7 @@ class Store(private val db: SchoolDatabase) {
         diffJson: String?,
         detectedAt: Instant,
         syncRunId: Long,
+        childId: String = "default",
     ) {
         db.schemaQueries.insertChangeEvent(
             entity_type = entityType.wireName(),
@@ -248,6 +293,7 @@ class Store(private val db: SchoolDatabase) {
             diff = diffJson,
             detected_at = detectedAt.toString(),
             sync_run_id = syncRunId,
+            child_id = childId,
         )
     }
 
@@ -255,8 +301,10 @@ class Store(private val db: SchoolDatabase) {
         afterId: Long,
         entityType: EntityType? = null,
         limit: Int = 100,
+        childId: String? = null,
     ): List<StoredChangeEvent> = db.schemaQueries.listChangeEventsAfter(
         afterId = afterId,
+        childId = childId,
         entityType = entityType?.wireName(),
         limit = limit.toLong(),
     ).executeAsList().map { it.toStoredChangeEvent() }
@@ -265,8 +313,10 @@ class Store(private val db: SchoolDatabase) {
         since: Instant,
         entityType: EntityType? = null,
         limit: Int = 100,
+        childId: String? = null,
     ): List<StoredChangeEvent> = db.schemaQueries.listChangeEventsSince(
         since = since.toString(),
+        childId = childId,
         entityType = entityType?.wireName(),
         limit = limit.toLong(),
     ).executeAsList().map { it.toStoredChangeEvent() }
@@ -284,9 +334,16 @@ class Store(private val db: SchoolDatabase) {
         gradeChanges: Changes<Grade>,
         messageChanges: Changes<Message>,
         now: Instant,
+        childId: String = "default",
     ): Int = transaction {
         for (created in gradeChanges.created) {
-            upsertGrade(created.item, contentHash = created.contentHash, now = now, firstSeenAt = now)
+            upsertGrade(
+                created.item,
+                contentHash = created.contentHash,
+                now = now,
+                firstSeenAt = now,
+                childId = childId,
+            )
             insertChangeEvent(
                 entityType = EntityType.GRADE,
                 entityId = created.item.sourceId,
@@ -294,6 +351,7 @@ class Store(private val db: SchoolDatabase) {
                 diffJson = null,
                 detectedAt = now,
                 syncRunId = syncRunId,
+                childId = childId,
             )
         }
         for (updated in gradeChanges.updated) {
@@ -302,6 +360,7 @@ class Store(private val db: SchoolDatabase) {
                 contentHash = updated.contentHash,
                 now = now,
                 firstSeenAt = updated.firstSeenAt,
+                childId = childId,
             )
             insertChangeEvent(
                 entityType = EntityType.GRADE,
@@ -310,10 +369,11 @@ class Store(private val db: SchoolDatabase) {
                 diffJson = updated.diffJson,
                 detectedAt = now,
                 syncRunId = syncRunId,
+                childId = childId,
             )
         }
         for (deletedId in gradeChanges.deletedIds) {
-            softDeleteGrade(deletedId, now = now)
+            softDeleteGrade(deletedId, now = now, childId = childId)
             insertChangeEvent(
                 entityType = EntityType.GRADE,
                 entityId = deletedId,
@@ -321,11 +381,18 @@ class Store(private val db: SchoolDatabase) {
                 diffJson = null,
                 detectedAt = now,
                 syncRunId = syncRunId,
+                childId = childId,
             )
         }
 
         for (created in messageChanges.created) {
-            upsertMessage(created.item, contentHash = created.contentHash, now = now, firstSeenAt = now)
+            upsertMessage(
+                created.item,
+                contentHash = created.contentHash,
+                now = now,
+                firstSeenAt = now,
+                childId = childId,
+            )
             insertChangeEvent(
                 entityType = EntityType.MESSAGE,
                 entityId = created.item.sourceId,
@@ -333,6 +400,7 @@ class Store(private val db: SchoolDatabase) {
                 diffJson = null,
                 detectedAt = now,
                 syncRunId = syncRunId,
+                childId = childId,
             )
         }
         for (updated in messageChanges.updated) {
@@ -341,6 +409,7 @@ class Store(private val db: SchoolDatabase) {
                 contentHash = updated.contentHash,
                 now = now,
                 firstSeenAt = updated.firstSeenAt,
+                childId = childId,
             )
             insertChangeEvent(
                 entityType = EntityType.MESSAGE,
@@ -349,10 +418,11 @@ class Store(private val db: SchoolDatabase) {
                 diffJson = updated.diffJson,
                 detectedAt = now,
                 syncRunId = syncRunId,
+                childId = childId,
             )
         }
         for (deletedId in messageChanges.deletedIds) {
-            softDeleteMessage(deletedId, now = now)
+            softDeleteMessage(deletedId, now = now, childId = childId)
             insertChangeEvent(
                 entityType = EntityType.MESSAGE,
                 entityId = deletedId,
@@ -360,6 +430,7 @@ class Store(private val db: SchoolDatabase) {
                 diffJson = null,
                 detectedAt = now,
                 syncRunId = syncRunId,
+                childId = childId,
             )
         }
 
@@ -381,6 +452,7 @@ class Store(private val db: SchoolDatabase) {
             comment = comment,
             issuedOn = LocalDate.parse(issued_on),
         ),
+        childId = child_id,
         contentHash = content_hash,
         firstSeenAt = Instant.parse(first_seen_at),
         updatedAt = Instant.parse(updated_at),
@@ -389,6 +461,7 @@ class Store(private val db: SchoolDatabase) {
 
     private fun school.server.store.db.Message.toStoredMessage(): StoredMessage = StoredMessage(
         sourceId = source_id,
+        childId = child_id,
         sender = sender,
         subject = subject,
         bodyText = body_text,
@@ -404,6 +477,7 @@ class Store(private val db: SchoolDatabase) {
 
     private fun school.server.store.db.Change_event.toStoredChangeEvent(): StoredChangeEvent = StoredChangeEvent(
         id = id,
+        childId = child_id,
         entityType = parseEntityType(entity_type),
         entityId = entity_id,
         changeType = parseChangeType(change_type),

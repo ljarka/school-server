@@ -18,6 +18,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     get("/messages") {
         ensureDataAvailable(store)
 
+        val childId = store.resolveChildId(call.request.queryParameters["child"])
         val unreadOnly = parseBooleanParam(call.request.queryParameters["unread"], "unread")
         val since = parseInstantParam(call.request.queryParameters["since"], "since")
         val limit = parseIntParam(call.request.queryParameters["limit"], "limit", default = 50, min = 1, max = 100)
@@ -30,6 +31,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
             includeDeleted = includeDeleted,
             limit = 10_000,
             offset = 0,
+            childId = childId,
         ).filter { msg ->
             (since == null || msg.sentAt >= since) &&
                 (cursor == null || isAfterCursor(msg.sentAt, msg.sourceId, cursor))
@@ -54,7 +56,8 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     get("/messages/{id}") {
         val id = call.parameters["id"]
             ?: throw ApiException(HttpStatusCode.BadRequest, "BAD_REQUEST", "Missing parameter 'id'")
-        val msg = store.getMessage(id)
+        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val msg = store.getMessage(id, childId)
             ?: throw ApiException(HttpStatusCode.NotFound, "NOT_FOUND", "Message not found")
         call.respond(msg.toDetailDto())
     }
@@ -62,27 +65,30 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     put("/messages/{id}/read") {
         val id = call.parameters["id"]
             ?: throw ApiException(HttpStatusCode.BadRequest, "BAD_REQUEST", "Missing parameter 'id'")
-        val existing = store.getMessage(id)
+        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val existing = store.getMessage(id, childId)
             ?: throw ApiException(HttpStatusCode.NotFound, "NOT_FOUND", "Message not found")
         if (existing.readAt == null) {
-            store.markMessageRead(id, clock.now())
+            store.markMessageRead(id, clock.now(), childId)
         }
-        val updated = store.getMessage(id)!!
+        val updated = store.getMessage(id, childId)!!
         call.respond(updated.toDetailDto())
     }
 
     delete("/messages/{id}/read") {
         val id = call.parameters["id"]
             ?: throw ApiException(HttpStatusCode.BadRequest, "BAD_REQUEST", "Missing parameter 'id'")
-        store.getMessage(id)
+        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        store.getMessage(id, childId)
             ?: throw ApiException(HttpStatusCode.NotFound, "NOT_FOUND", "Message not found")
-        store.markMessageUnread(id)
-        val updated = store.getMessage(id)!!
+        store.markMessageUnread(id, childId)
+        val updated = store.getMessage(id, childId)!!
         call.respond(updated.toDetailDto())
     }
 
     post("/messages/read-all") {
-        val marked = store.markAllMessagesRead(clock.now())
+        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val marked = store.markAllMessagesRead(clock.now(), childId)
         call.respond(MarkAllReadResponseDto(marked = marked))
     }
 }

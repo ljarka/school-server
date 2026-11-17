@@ -1,0 +1,71 @@
+CREATE TABLE child_account (
+    id TEXT PRIMARY KEY,
+    login TEXT NOT NULL,
+    name TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE grade_new (
+    child_id TEXT NOT NULL DEFAULT 'default',
+    source_id TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    value TEXT NOT NULL,
+    numeric_value REAL,
+    weight INTEGER,
+    category TEXT NOT NULL,
+    semester INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    counts_to_average INTEGER NOT NULL,
+    teacher TEXT NOT NULL,
+    comment TEXT,
+    issued_on TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT,
+    PRIMARY KEY (child_id, source_id)
+);
+
+INSERT INTO grade_new (
+    child_id, source_id, subject, value, numeric_value, weight, category, semester, kind,
+    counts_to_average, teacher, comment, issued_on, content_hash, first_seen_at, updated_at, deleted_at
+)
+SELECT
+    'default', source_id, subject, value, numeric_value, weight, category, semester, kind,
+    counts_to_average, teacher, comment, issued_on, content_hash, first_seen_at, updated_at, deleted_at
+FROM grade;
+
+DROP TABLE grade;
+ALTER TABLE grade_new RENAME TO grade;
+
+CREATE TABLE message_new (
+    child_id TEXT NOT NULL DEFAULT 'default',
+    source_id TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body_text TEXT,
+    body_html TEXT,
+    sent_at TEXT NOT NULL,
+    attachments TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    read_at TEXT,
+    first_seen_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT,
+    PRIMARY KEY (child_id, source_id)
+);
+
+INSERT INTO message_new (
+    child_id, source_id, sender, subject, body_text, body_html, sent_at, attachments,
+    content_hash, read_at, first_seen_at, updated_at, deleted_at
+)
+SELECT
+    'default', source_id, sender, subject, body_text, body_html, sent_at, attachments,
+    content_hash, read_at, first_seen_at, updated_at, deleted_at
+FROM message;
+
+DROP TABLE message;
+ALTER TABLE message_new RENAME TO message;
+
+ALTER TABLE change_event ADD COLUMN child_id TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX change_event_child_type ON change_event(child_id, entity_type, id);

@@ -230,4 +230,14 @@ class HttpJournalClientLoginTest {
             journalLogger.level = previousLevel
         }
     }
+
+    @Test
+    fun `listChildren returns all linked child accounts when SCHOOL_CHILD is unset`() {
+        enqueueHappyLogin()
+        val journal = client()
+        journal.login()
+        val children = journal.listChildren()
+        assertEquals(listOf("101", "102"), children.map { it.id })
+        assertEquals(listOf("123456u", "654321u"), children.map { it.login })
+    }
 }

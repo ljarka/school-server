@@ -1,5 +1,13 @@
+CREATE TABLE child_account (
+    id TEXT PRIMARY KEY,
+    login TEXT NOT NULL,
+    name TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE grade (
-    source_id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL DEFAULT 'default',
+    source_id TEXT NOT NULL,
     subject TEXT NOT NULL,
     value TEXT NOT NULL,
     numeric_value REAL,
@@ -14,11 +22,13 @@ CREATE TABLE grade (
     content_hash TEXT NOT NULL,
     first_seen_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    deleted_at TEXT
+    deleted_at TEXT,
+    PRIMARY KEY (child_id, source_id)
 );
 
 CREATE TABLE message (
-    source_id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL DEFAULT 'default',
+    source_id TEXT NOT NULL,
     sender TEXT NOT NULL,
     subject TEXT NOT NULL,
     body_text TEXT,
@@ -29,7 +39,8 @@ CREATE TABLE message (
     read_at TEXT,
     first_seen_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    deleted_at TEXT
+    deleted_at TEXT,
+    PRIMARY KEY (child_id, source_id)
 );
 
 CREATE TABLE sync_run (
@@ -49,24 +60,42 @@ CREATE TABLE change_event (
     change_type TEXT NOT NULL,
     diff TEXT,
     detected_at TEXT NOT NULL,
-    sync_run_id INTEGER NOT NULL REFERENCES sync_run(id)
+    sync_run_id INTEGER NOT NULL REFERENCES sync_run(id),
+    child_id TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE INDEX change_event_type ON change_event(entity_type, id);
+CREATE INDEX change_event_child_type ON change_event(child_id, entity_type, id);
 
 CREATE TABLE meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 
+-- Child account queries
+
+upsertChildAccount:
+INSERT INTO child_account (id, login, name, updated_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    login = excluded.login,
+    name = excluded.name,
+    updated_at = excluded.updated_at;
+
+listChildAccounts:
+SELECT * FROM child_account ORDER BY id ASC;
+
+findChildAccount:
+SELECT * FROM child_account WHERE id = :selector OR login = :selector LIMIT 1;
+
 -- Grade queries
 
 upsertGrade:
 INSERT INTO grade (
-    source_id, subject, value, numeric_value, weight, category, semester, kind,
+    child_id, source_id, subject, value, numeric_value, weight, category, semester, kind,
     counts_to_average, teacher, comment, issued_on, content_hash, first_seen_at, updated_at, deleted_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(source_id) DO UPDATE SET
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(child_id, source_id) DO UPDATE SET
     subject = excluded.subject,
     value = excluded.value,
     numeric_value = excluded.numeric_value,
@@ -83,14 +112,16 @@ ON CONFLICT(source_id) DO UPDATE SET
     deleted_at = excluded.deleted_at;
 
 softDeleteGrade:
-UPDATE grade SET deleted_at = ?, updated_at = ? WHERE source_id = ? AND deleted_at IS NULL;
+UPDATE grade SET deleted_at = ?, updated_at = ?
+WHERE child_id = ? AND source_id = ? AND deleted_at IS NULL;
 
 selectGradeById:
-SELECT * FROM grade WHERE source_id = ?;
+SELECT * FROM grade WHERE child_id = ? AND source_id = ?;
 
 listGrades:
 SELECT * FROM grade
-WHERE (:includeDeleted = 1 OR deleted_at IS NULL)
+WHERE (:childId IS NULL OR child_id = :childId)
+  AND (:includeDeleted = 1 OR deleted_at IS NULL)
   AND (:semester IS NULL OR semester = :semester)
   AND (:subject IS NULL OR subject = :subject)
 ORDER BY issued_on DESC, source_id ASC;
@@ -102,10 +133,10 @@ SELECT COUNT(*) FROM grade WHERE deleted_at IS NULL;
 
 upsertMessage:
 INSERT INTO message (
-    source_id, sender, subject, body_text, body_html, sent_at, attachments,
+    child_id, source_id, sender, subject, body_text, body_html, sent_at, attachments,
     content_hash, read_at, first_seen_at, updated_at, deleted_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(source_id) DO UPDATE SET
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(child_id, source_id) DO UPDATE SET
     sender = excluded.sender,
     subject = excluded.subject,
     body_text = COALESCE(excluded.body_text, message.body_text),
@@ -117,26 +148,38 @@ ON CONFLICT(source_id) DO UPDATE SET
     deleted_at = excluded.deleted_at;
 
 softDeleteMessage:
-UPDATE message SET deleted_at = ?, updated_at = ? WHERE source_id = ? AND deleted_at IS NULL;
+UPDATE message SET deleted_at = ?, updated_at = ?
+WHERE child_id = ? AND source_id = ? AND deleted_at IS NULL;
 
 selectMessageById:
-SELECT * FROM message WHERE source_id = ?;
+SELECT * FROM message
+WHERE source_id = :sourceId
+  AND (:childId IS NULL OR child_id = :childId)
+LIMIT 1;
 
 listMessages:
 SELECT * FROM message
-WHERE (:includeDeleted = 1 OR deleted_at IS NULL)
+WHERE (:childId IS NULL OR child_id = :childId)
+  AND (:includeDeleted = 1 OR deleted_at IS NULL)
   AND (:unreadOnly = 0 OR read_at IS NULL)
 ORDER BY sent_at DESC, source_id DESC
 LIMIT :limit OFFSET :offset;
 
 markMessageRead:
-UPDATE message SET read_at = COALESCE(read_at, :readAt) WHERE source_id = :sourceId;
+UPDATE message SET read_at = COALESCE(read_at, :readAt)
+WHERE source_id = :sourceId
+  AND (:childId IS NULL OR child_id = :childId);
 
 markMessageUnread:
-UPDATE message SET read_at = NULL WHERE source_id = ?;
+UPDATE message SET read_at = NULL
+WHERE source_id = :sourceId
+  AND (:childId IS NULL OR child_id = :childId);
 
 markAllMessagesRead:
-UPDATE message SET read_at = ? WHERE read_at IS NULL AND deleted_at IS NULL;
+UPDATE message SET read_at = :readAt
+WHERE read_at IS NULL
+  AND deleted_at IS NULL
+  AND (:childId IS NULL OR child_id = :childId);
 
 countActiveMessages:
 SELECT COUNT(*) FROM message WHERE deleted_at IS NULL;
@@ -147,12 +190,13 @@ SELECT COUNT(*) FROM message WHERE deleted_at IS NULL AND read_at IS NULL;
 -- Change event queries
 
 insertChangeEvent:
-INSERT INTO change_event (entity_type, entity_id, change_type, diff, detected_at, sync_run_id)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO change_event (entity_type, entity_id, change_type, diff, detected_at, sync_run_id, child_id)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 listChangeEventsAfter:
 SELECT * FROM change_event
 WHERE id > :afterId
+  AND (:childId IS NULL OR child_id = :childId)
   AND (:entityType IS NULL OR entity_type = :entityType)
 ORDER BY id ASC
 LIMIT :limit;
@@ -160,6 +204,7 @@ LIMIT :limit;
 listChangeEventsSince:
 SELECT * FROM change_event
 WHERE detected_at >= :since
+  AND (:childId IS NULL OR child_id = :childId)
   AND (:entityType IS NULL OR entity_type = :entityType)
 ORDER BY id ASC
 LIMIT :limit;

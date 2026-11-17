@@ -9,6 +9,7 @@ import okhttp3.MultipartBody
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import school.model.AuthRejected
+import school.model.ChildAccount
 import school.model.Grade
 import school.model.JournalClient
 import school.model.JournalUnavailable
@@ -32,19 +33,34 @@ class HttpJournalClient(
     @Volatile
     private var messagesActivated = false
 
+    @Volatile
+    private var activeMessagesChildId: String? = null
+
     override fun login() {
         if (isGatewayMode) {
             performGatewayLogin()
         } else {
-            val account = performPortalLogin()
-            tokenProvider.setAccount(account)
+            val accounts = performPortalLogin()
+            tokenProvider.setAccounts(accounts)
         }
         logger.debug("e-journal login succeeded")
     }
 
-    override fun fetchGrades(): List<Grade> {
+    override fun listChildren(): List<ChildAccount> = if (isGatewayMode) {
+        listOf(ChildAccount(id = login, login = login, name = login))
+    } else {
+        tokenProvider.listAccounts().map { account ->
+            ChildAccount(
+                id = account.id.toString(),
+                login = account.login,
+                name = account.studentName.ifBlank { account.login },
+            )
+        }
+    }
+
+    override fun fetchGrades(childId: String?): List<Grade> {
         val gradesRaw = try {
-            getApiJson(ProtocolPaths.API_GRADES_PATH)
+            getApiJson(ProtocolPaths.API_GRADES_PATH, childId)
         } catch (_: GatewayAccessDeniedException) {
             logger.info("e-journal grades resource not available for this account; continuing without grades")
             return emptyList()
@@ -62,16 +78,19 @@ class HttpJournalClient(
         val subjects = decodeLookup<SubjectsResponseDto>(
             ProtocolPaths.API_SUBJECTS_PATH,
             "subjects",
+            childId,
         ).subjects.associateBy { it.id }
 
         val categories = decodeLookup<GradeCategoriesResponseDto>(
             ProtocolPaths.API_CATEGORIES_PATH,
             "categories",
+            childId,
         ).categories.associateBy { it.id }
 
         val comments = decodeLookup<GradeCommentsResponseDto>(
             ProtocolPaths.API_COMMENTS_PATH,
             "comments",
+            childId,
         ).comments
             .filter { it.grade != null && !it.text.isNullOrBlank() }
             .groupBy { it.grade!!.id }
@@ -80,6 +99,7 @@ class HttpJournalClient(
         val users = decodeLookup<UsersResponseDto>(
             ProtocolPaths.API_USERS_PATH,
             "users",
+            childId,
         ).users.associateBy { it.id }
 
         return GradesMapper.map(
@@ -91,8 +111,8 @@ class HttpJournalClient(
         )
     }
 
-    private inline fun <reified T> decodeLookup(path: String, name: String): T {
-        val raw = getApiJson(path)
+    private inline fun <reified T> decodeLookup(path: String, name: String, childId: String?): T {
+        val raw = getApiJson(path, childId)
         return try {
             json.decodeFromString<T>(raw)
         } catch (e: Exception) {
@@ -100,13 +120,13 @@ class HttpJournalClient(
         }
     }
 
-    override fun fetchMessageHeaders(): List<MessageHeader> {
+    override fun fetchMessageHeaders(childId: String?): List<MessageHeader> {
         val result = mutableListOf<MessageHeader>()
         val seenIds = HashSet<String>()
 
         for (page in 1..MAX_MESSAGE_PAGES) {
             val path = "${ProtocolPaths.MESSAGES_INBOX_PATH}?page=$page&limit=$messagesPageLimit"
-            val raw = getMessagesJson(path)
+            val raw = getMessagesJson(path, childId)
             val parsed = try {
                 json.decodeFromString<MessagesListResponseDto>(raw)
             } catch (e: Exception) {
@@ -135,9 +155,9 @@ class HttpJournalClient(
         return result
     }
 
-    override fun fetchMessage(sourceId: String): Message {
+    override fun fetchMessage(sourceId: String, childId: String?): Message {
         val rawId = sourceId.removePrefix("m_")
-        val raw = getMessagesJson("${ProtocolPaths.MESSAGES_INBOX_PATH}/$rawId")
+        val raw = getMessagesJson("${ProtocolPaths.MESSAGES_INBOX_PATH}/$rawId", childId)
         val parsed = try {
             json.decodeFromString<MessageDetailResponseDto>(raw)
         } catch (e: Exception) {
@@ -146,12 +166,13 @@ class HttpJournalClient(
         return MessagesMapper.mapDetail(parsed.data)
     }
 
-    private fun getMessagesJson(path: String): String {
-        if (!messagesActivated) {
+    private fun getMessagesJson(path: String, childId: String?): String {
+        val targetChildId = if (isGatewayMode) login else tokenProvider.currentAccount(childId)?.id?.toString()
+        if (!messagesActivated || (!isGatewayMode && activeMessagesChildId != targetChildId)) {
             if (isGatewayMode) {
                 activateGatewayMessages()
             } else {
-                activatePortalMessages()
+                activatePortalMessages(childId)
             }
         }
 
@@ -169,10 +190,11 @@ class HttpJournalClient(
                 activateGatewayMessages()
             } else {
                 tokenProvider.refresh(
+                    childId = childId,
                     fetchFresh = { childLogin -> fetchFreshChildAccount(childLogin) },
                     relogin = { performPortalLogin() },
                 )
-                activatePortalMessages()
+                activatePortalMessages(childId)
             }
             val retry = session.get(
                 url = endpoints.messagesUrl(path),
@@ -196,12 +218,12 @@ class HttpJournalClient(
      * Performs a GET request to JSON API v3 (bearer) or Gateway API 2.0 (cookie),
      * refreshing once on 401.
      */
-    internal fun getApiJson(path: String): String {
+    internal fun getApiJson(path: String, childId: String? = null): String {
         if (isGatewayMode) {
             return getGatewayApiJson(path)
         }
 
-        val token = tokenProvider.currentToken()
+        val token = tokenProvider.currentToken(childId)
             ?: throw JournalUnavailable("not_authenticated")
 
         val first = session.get(
@@ -215,6 +237,7 @@ class HttpJournalClient(
         if (first.code == 401) {
             logger.debug("e-journal API returned 401, refreshing token")
             val refreshedToken = tokenProvider.refresh(
+                childId = childId,
                 fetchFresh = { childLogin -> fetchFreshChildAccount(childLogin) },
                 relogin = { performPortalLogin() },
             )
@@ -266,7 +289,7 @@ class HttpJournalClient(
         return response.body
     }
 
-    private fun performPortalLogin(): PortalAccountDto {
+    private fun performPortalLogin(): List<PortalAccountDto> {
         val loginPageUrl = endpoints.portalUrl(ProtocolPaths.PORTAL_LOGIN_PATH)
         val loginPage = session.get(loginPageUrl)
 
@@ -334,7 +357,7 @@ class HttpJournalClient(
         }
     }
 
-    private fun selectChildAccount(): PortalAccountDto {
+    private fun selectChildAccount(): List<PortalAccountDto> {
         val accountsRes = session.get(
             url = endpoints.portalUrl(ProtocolPaths.PORTAL_ACCOUNTS_PATH),
             headers = mapOf("Accept" to "application/json"),
@@ -353,7 +376,14 @@ class HttpJournalClient(
         } catch (e: Exception) {
             throw JournalUnavailable("layout_changed:accounts", e)
         }
-        return ChildSelector.select(parsed.accounts, configuredChild)
+        if (parsed.accounts.isEmpty()) {
+            throw AuthRejected("child_not_found")
+        }
+        val selector = configuredChild?.trim()?.ifEmpty { null }
+        if (selector != null) {
+            return listOf(ChildSelector.select(parsed.accounts, selector))
+        }
+        return parsed.accounts
     }
 
     private fun fetchFreshChildAccount(childLogin: String): PortalAccountDto? {
@@ -480,15 +510,17 @@ class HttpJournalClient(
         messagesActivated = true
     }
 
-    private fun activatePortalMessages() {
-        val token = tokenProvider.currentToken()
+    private fun activatePortalMessages(childId: String?) {
+        val token = tokenProvider.currentToken(childId)
             ?: tokenProvider.refresh(
+                childId = childId,
                 fetchFresh = { childLogin -> fetchFreshChildAccount(childLogin) },
                 relogin = { performPortalLogin() },
             )
         val autoLoginRes = postAutoLoginToken(token).let { res ->
             if (res.code == 401) {
                 val refreshed = tokenProvider.refresh(
+                    childId = childId,
                     fetchFresh = { childLogin -> fetchFreshChildAccount(childLogin) },
                     relogin = { performPortalLogin() },
                 )
@@ -527,6 +559,7 @@ class HttpJournalClient(
         }
 
         activateGatewayMessages()
+        activeMessagesChildId = tokenProvider.currentAccount(childId)?.id?.toString()
     }
 
     private fun postAutoLoginToken(accessToken: String): HttpResponseData = session.postForm(

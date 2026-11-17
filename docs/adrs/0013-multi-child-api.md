@@ -23,6 +23,7 @@ with a different `.env`.
 
 ## Consequences
 
-- Requires SQLDelight migration `1.sqm` (`grade`, `message`, `change_event`, `child_account`).
+- `child_account` table and `child_id` columns on `grade`, `message`, and `change_event` are part
+  of the base v1 schema (`Schema.sq` / `1.db`).
 - `JournalClient` accepts `childId: String?` on fetch methods and exposes `listChildren()`.
 - Supersedes the single-child limitation in ADR 0011.

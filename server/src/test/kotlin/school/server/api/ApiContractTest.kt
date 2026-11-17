@@ -351,8 +351,11 @@ class ApiContractTest {
         assertEquals(HttpStatusCode.Accepted, first.status)
         assertEquals("""{"status":"started"}""", first.bodyAsText())
 
-        // Trigger auth_failed synchronously then verify POST /sync returns 409 AUTH_FAILED
-        syncService.syncNow()
+        // Wait for the background sync to record auth_failed, then verify POST /sync returns 409 AUTH_FAILED
+        repeat(50) {
+            if (syncService.state().authState == school.server.sync.AuthState.AUTH_FAILED) return@repeat
+            kotlinx.coroutines.delay(10)
+        }
         val afterAuthFail = client.post("/api/v1/sync") { header("X-School-Key", "test-key") }
         assertEquals(HttpStatusCode.Conflict, afterAuthFail.status)
         assertTrue(afterAuthFail.bodyAsText().contains("AUTH_FAILED"))

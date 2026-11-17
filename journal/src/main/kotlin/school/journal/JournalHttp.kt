@@ -12,6 +12,9 @@ internal fun HttpResponseData.isAuthError(): Boolean = code == 401 || code == 40
 /** A 403 that says "this account may not see this resource", as opposed to an expired session. */
 internal fun HttpResponseData.isAccessDenied(): Boolean = code == 403 && body.contains("\"AccessDeny\"")
 
+/** A 403 AccessDeny, 404 NotFound or 405 MethodNotAllowed for an optional e-journal module. */
+internal fun HttpResponseData.isOptionalModuleUnavailable(): Boolean = isAccessDenied() || code == 404 || code == 405
+
 /**
  * Returns the body of a 2xx response. 401/403 call [onAuthError]; anything else throws
  * `JournalUnavailable("http_<code>")`.

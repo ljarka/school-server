@@ -38,47 +38,223 @@ class HttpJournalClient(
     override fun listChildren(): List<ChildAccount> = auth.listChildren()
 
     override fun fetchGrades(childId: String?): List<Grade>? {
-        val gradesRaw = try {
-            getApiJson(ProtocolPaths.API_GRADES_PATH, childId)
+        val (standardAccessDenied, standardGrades) = try {
+            val gradesRaw = getApiJson(ProtocolPaths.API_GRADES_PATH, childId)
+            val parsed = try {
+                json.decodeFromString<GradesResponseDto>(gradesRaw).grades
+            } catch (e: Exception) {
+                throw JournalUnavailable("layout_changed:grades", e)
+            }
+            false to parsed
         } catch (_: AccessDeniedException) {
-            logger.info("e-journal grades resource not available for this account; keeping stored grades")
-            return null
-        }
-        val gradesResponse = try {
-            json.decodeFromString<GradesResponseDto>(gradesRaw)
-        } catch (e: Exception) {
-            throw JournalUnavailable("layout_changed:grades", e)
+            true to emptyList()
         }
 
-        if (gradesResponse.grades.isEmpty()) {
+        val (descriptiveAvailable, descriptiveGrades) =
+            fetchOptionalList<DescriptiveGradesResponseDto, DescriptiveGradeDto>(
+                path = ProtocolPaths.API_DESCRIPTIVE_GRADES_PATH,
+                name = "descriptive_grades",
+                childId = childId,
+            ) { it.grades }
+
+        val (descriptiveTextAvailable, descriptiveTextGrades) =
+            fetchOptionalList<TextGradesResponseDto, TextGradeDto>(
+                path = ProtocolPaths.API_DESCRIPTIVE_TEXT_GRADES_PATH,
+                name = "descriptive_text_grades",
+                childId = childId,
+            ) { it.grades.filter(TextGradeDto::showInGradesView) }
+
+        val (baseTextAvailable, baseTextGrades) =
+            fetchOptionalList<TextGradesResponseDto, TextGradeDto>(
+                path = ProtocolPaths.API_BASE_TEXT_GRADES_PATH,
+                name = "base_text_grades",
+                childId = childId,
+            ) { it.grades.filter(TextGradeDto::showInGradesView) }
+
+        val (textAvailable, textGrades) =
+            fetchOptionalList<TextGradesResponseDto, TextGradeDto>(
+                path = ProtocolPaths.API_TEXT_GRADES_PATH,
+                name = "text_grades",
+                childId = childId,
+            ) { it.grades.filter(TextGradeDto::showInGradesView) }
+
+        val (pointAvailable, pointGrades) =
+            fetchOptionalList<PointGradesResponseDto, PointGradeDto>(
+                path = ProtocolPaths.API_POINT_GRADES_PATH,
+                name = "point_grades",
+                childId = childId,
+            ) { it.grades }
+
+        val hasAnyGrades = standardGrades.isNotEmpty() ||
+            descriptiveGrades.isNotEmpty() ||
+            descriptiveTextGrades.isNotEmpty() ||
+            baseTextGrades.isNotEmpty() ||
+            textGrades.isNotEmpty() ||
+            pointGrades.isNotEmpty()
+
+        val anyModuleAvailable = !standardAccessDenied ||
+            descriptiveAvailable ||
+            descriptiveTextAvailable ||
+            baseTextAvailable ||
+            textAvailable ||
+            pointAvailable
+
+        if (!hasAnyGrades) {
+            if (!anyModuleAvailable) {
+                logger.info("e-journal grades resource not available for this account; keeping stored grades")
+                return null
+            }
             return emptyList()
         }
 
-        val subjects = decodeLookup<SubjectsResponseDto>(ProtocolPaths.API_SUBJECTS_PATH, "subjects", childId)
-            .subjects.associateBy { it.id }
+        val subjects = decodeOptionalLookup<SubjectsResponseDto>(ProtocolPaths.API_SUBJECTS_PATH, "subjects", childId)
+            ?.subjects?.associateBy { it.id }.orEmpty()
 
-        val categories = decodeLookup<GradeCategoriesResponseDto>(
-            ProtocolPaths.API_CATEGORIES_PATH,
-            "categories",
-            childId,
-        ).categories.associateBy { it.id }
+        val users = decodeOptionalLookup<UsersResponseDto>(ProtocolPaths.API_USERS_PATH, "users", childId)
+            ?.users?.associateBy { it.id }.orEmpty()
 
-        val comments = decodeLookup<GradeCommentsResponseDto>(ProtocolPaths.API_COMMENTS_PATH, "comments", childId)
-            .comments
-            .filter { it.grade != null && !it.text.isNullOrBlank() }
-            .groupBy { it.grade!!.id }
-            .mapValues { (_, list) -> list.joinToString("\n") { it.text.orEmpty().trim() } }
+        val result = mutableListOf<Grade>()
 
-        val users = decodeLookup<UsersResponseDto>(ProtocolPaths.API_USERS_PATH, "users", childId)
-            .users.associateBy { it.id }
+        if (standardGrades.isNotEmpty()) {
+            val categories = decodeLookup<GradeCategoriesResponseDto>(
+                ProtocolPaths.API_CATEGORIES_PATH,
+                "categories",
+                childId,
+            ).categories.associateBy { it.id }
 
-        return GradesMapper.map(
-            grades = gradesResponse.grades,
-            subjects = subjects,
-            categories = categories,
-            commentsByGradeId = comments,
-            users = users,
-        )
+            val comments = decodeLookup<GradeCommentsResponseDto>(ProtocolPaths.API_COMMENTS_PATH, "comments", childId)
+                .comments
+                .filter { it.grade != null && !it.text.isNullOrBlank() }
+                .groupBy { it.grade!!.id }
+                .mapValues { (_, list) -> list.joinToString("\n") { it.text.orEmpty().trim() } }
+
+            result += GradesMapper.map(
+                grades = standardGrades,
+                subjects = subjects,
+                categories = categories,
+                commentsByGradeId = comments,
+                users = users,
+            )
+        }
+
+        if (descriptiveGrades.isNotEmpty()) {
+            val skills = decodeOptionalLookup<DescriptiveSkillsResponseDto>(
+                ProtocolPaths.API_DESCRIPTIVE_SKILLS_PATH,
+                "descriptive_skills",
+                childId,
+            )?.skills?.associateBy { it.id }.orEmpty()
+
+            val commentList = if (descriptiveGrades.any { it.comments.isNotEmpty() }) {
+                decodeOptionalLookup<GradeCommentsResponseDto>(
+                    ProtocolPaths.API_DESCRIPTIVE_COMMENTS_PATH,
+                    "descriptive_comments",
+                    childId,
+                )?.comments.orEmpty()
+            } else {
+                emptyList()
+            }
+            val commentsById = commentList
+                .filter { !it.text.isNullOrBlank() }
+                .associate { it.id to it.text.orEmpty().trim() }
+            val commentsByGradeId = commentList
+                .filter { it.grade != null && !it.text.isNullOrBlank() }
+                .groupBy { it.grade!!.id }
+                .mapValues { (_, list) -> list.joinToString("\n") { it.text.orEmpty().trim() } }
+
+            result += GradesMapper.mapDescriptive(
+                grades = descriptiveGrades,
+                subjects = subjects,
+                skills = skills,
+                commentsById = commentsById,
+                commentsByGradeId = commentsByGradeId,
+                users = users,
+            )
+        }
+
+        if (descriptiveTextGrades.isNotEmpty() || baseTextGrades.isNotEmpty() || textGrades.isNotEmpty()) {
+            val textCategories = if (baseTextGrades.any { it.category != null } ||
+                textGrades.any { it.category != null }
+            ) {
+                decodeOptionalLookup<GradeCategoriesResponseDto>(
+                    ProtocolPaths.API_TEXT_GRADE_CATEGORIES_PATH,
+                    "text_grade_categories",
+                    childId,
+                )?.categories?.associateBy { it.id }.orEmpty()
+            } else {
+                emptyMap()
+            }
+            val textSkills = if (
+                descriptiveTextGrades.any { it.skill != null } ||
+                baseTextGrades.any { it.skill != null } ||
+                textGrades.any { it.skill != null }
+            ) {
+                decodeOptionalLookup<DescriptiveSkillsResponseDto>(
+                    ProtocolPaths.API_DESCRIPTIVE_TEXT_SKILLS_PATH,
+                    "descriptive_text_skills",
+                    childId,
+                )?.skills?.associateBy { it.id }.orEmpty()
+            } else {
+                emptyMap()
+            }
+
+            if (descriptiveTextGrades.isNotEmpty()) {
+                result += GradesMapper.mapText(
+                    grades = descriptiveTextGrades,
+                    prefix = "dtg",
+                    subjects = subjects,
+                    categories = textCategories,
+                    skills = textSkills,
+                    users = users,
+                )
+            }
+            val combinedText = (baseTextGrades + textGrades).distinctBy { it.id }
+            if (combinedText.isNotEmpty()) {
+                result += GradesMapper.mapText(
+                    grades = combinedText,
+                    prefix = "tg",
+                    subjects = subjects,
+                    categories = textCategories,
+                    skills = textSkills,
+                    users = users,
+                )
+            }
+        }
+
+        if (pointGrades.isNotEmpty()) {
+            val categories = decodeOptionalLookup<PointGradeCategoriesResponseDto>(
+                ProtocolPaths.API_POINT_GRADE_CATEGORIES_PATH,
+                "point_grade_categories",
+                childId,
+            )?.categories?.associateBy { it.id }.orEmpty()
+
+            val commentList = if (pointGrades.any { it.comments.isNotEmpty() }) {
+                decodeOptionalLookup<GradeCommentsResponseDto>(
+                    ProtocolPaths.API_POINT_GRADE_COMMENTS_PATH,
+                    "point_grade_comments",
+                    childId,
+                )?.comments.orEmpty()
+            } else {
+                emptyList()
+            }
+            val commentsById = commentList
+                .filter { !it.text.isNullOrBlank() }
+                .associate { it.id to it.text.orEmpty().trim() }
+            val commentsByGradeId = commentList
+                .filter { it.grade != null && !it.text.isNullOrBlank() }
+                .groupBy { it.grade!!.id }
+                .mapValues { (_, list) -> list.joinToString("\n") { it.text.orEmpty().trim() } }
+
+            result += GradesMapper.mapPoint(
+                grades = pointGrades,
+                subjects = subjects,
+                categories = categories,
+                commentsById = commentsById,
+                commentsByGradeId = commentsByGradeId,
+                users = users,
+            )
+        }
+
+        return result
     }
 
     override fun fetchAnnouncements(childId: String?): List<Message>? {
@@ -117,6 +293,33 @@ class HttpJournalClient(
         } catch (e: Exception) {
             throw JournalUnavailable("layout_changed:$name", e)
         }
+    }
+
+    private inline fun <reified T> decodeOptionalLookup(path: String, name: String, childId: String?): T? {
+        val raw = getOptionalApiJson(path, childId) ?: return null
+        if (raw.isBlank()) return null
+        return try {
+            json.decodeFromString<T>(raw)
+        } catch (e: Exception) {
+            throw JournalUnavailable("layout_changed:$name", e)
+        }
+    }
+
+    private inline fun <reified R, I> fetchOptionalList(
+        path: String,
+        name: String,
+        childId: String?,
+        extract: (R) -> List<I>,
+    ): Pair<Boolean, List<I>> {
+        val raw = getOptionalApiJson(path, childId) ?: return false to emptyList()
+        if (raw.isBlank()) return true to emptyList()
+        val items = try {
+            extract(json.decodeFromString<R>(raw))
+        } catch (_: Exception) {
+            logger.debug("e-journal optional module {} returned unrecognized payload; skipping", name)
+            return false to emptyList()
+        }
+        return true to items
     }
 
     override fun fetchMessageHeaders(childId: String?): MessageHeaderListing {
@@ -182,6 +385,15 @@ class HttpJournalClient(
         val response = auth.getApi(path, childId)
         if (response.isAccessDenied()) {
             throw AccessDeniedException()
+        }
+        return response.requireRenewedSession()
+    }
+
+    /** Like [getApiJson], but returns `null` when an optional module answers 403 AccessDeny, 404 or 405. */
+    internal fun getOptionalApiJson(path: String, childId: String? = null): String? {
+        val response = auth.getApi(path, childId)
+        if (response.isOptionalModuleUnavailable()) {
+            return null
         }
         return response.requireRenewedSession()
     }

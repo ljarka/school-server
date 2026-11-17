@@ -48,15 +48,20 @@ class HttpJournalClientGradesTest {
         ).apply { login() }
     }
 
+    private fun enqueueEmptyExtraGrades(count: Int = 5) {
+        repeat(count) { server.enqueue(MockResponse(code = 404, body = "")) }
+    }
+
     @Test
     fun `fetchGrades resolves lookups, comments, kinds, and Polish characters`() {
         val journal = loggedInClient()
 
         server.enqueue(MockResponse(code = 200, body = gradeFixture("grades.json")))
+        enqueueEmptyExtraGrades()
         server.enqueue(MockResponse(code = 200, body = gradeFixture("subjects.json")))
+        server.enqueue(MockResponse(code = 200, body = gradeFixture("users.json")))
         server.enqueue(MockResponse(code = 200, body = gradeFixture("categories.json")))
         server.enqueue(MockResponse(code = 200, body = gradeFixture("comments.json")))
-        server.enqueue(MockResponse(code = 200, body = gradeFixture("users.json")))
 
         val grades = journal.fetchGrades()!!
         assertEquals(6, grades.size)
@@ -90,6 +95,7 @@ class HttpJournalClientGradesTest {
     fun `empty grades array returns empty list`() {
         val journal = loggedInClient()
         server.enqueue(MockResponse(code = 200, body = gradeFixture("grades_empty.json")))
+        enqueueEmptyExtraGrades()
 
         assertEquals(emptyList(), journal.fetchGrades())
     }
@@ -126,6 +132,7 @@ class HttpJournalClientGradesTest {
                     """"Message":"Account not have access to Grades resource"}""",
             ),
         )
+        enqueueEmptyExtraGrades()
 
         gatewayClient.login()
         assertNull(gatewayClient.fetchGrades())
@@ -136,15 +143,16 @@ class HttpJournalClientGradesTest {
         val journal = loggedInClient()
 
         server.enqueue(MockResponse(code = 200, body = gradeFixture("grades.json")))
+        enqueueEmptyExtraGrades()
         server.enqueue(MockResponse(code = 200, body = gradeFixture("subjects.json")))
-        server.enqueue(MockResponse(code = 200, body = gradeFixture("categories.json")))
-        server.enqueue(MockResponse(code = 200, body = """{"Comments":[{"Id":1,"Grade":{"Id":8812},"Text":null}]}"""))
         server.enqueue(
             MockResponse(
                 code = 200,
                 body = """{"Users":[{"Id":33,"FirstName":null,"LastName":null}]}""",
             ),
         )
+        server.enqueue(MockResponse(code = 200, body = gradeFixture("categories.json")))
+        server.enqueue(MockResponse(code = 200, body = """{"Comments":[{"Id":1,"Grade":{"Id":8812},"Text":null}]}"""))
 
         val grades = journal.fetchGrades()!!
         assertEquals(6, grades.size)
@@ -162,6 +170,103 @@ class HttpJournalClientGradesTest {
                     """"Message":"Account not have access to Grades resource"}""",
             ),
         )
+        enqueueEmptyExtraGrades()
         assertNull(journal.fetchGrades())
+    }
+
+    @Test
+    fun `fetchGrades maps descriptive, text, and point grades when present`() {
+        val journal = loggedInClient()
+        // /Grades denied (early primary school), /DescriptiveGrades and /BaseTextGrades populated
+        server.enqueue(
+            MockResponse(
+                code = 403,
+                body = """{"Status":"Error","Code":"AccessDeny","Message":"No access"}""",
+            ),
+        )
+        // /DescriptiveGrades
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body =
+                """{"Grades":[{"Id":501,"Subject":{"Id":1},"Skill":{"Id":90},"AddedBy":{"Id":20},""" +
+                    """"Map":"6","Grade":"3","Date":"2026-11-12","Semester":1,"Comments":[{"Id":700}]}]}""",
+            ),
+        )
+        // /DescriptiveTextGrades (404)
+        server.enqueue(MockResponse(code = 404, body = ""))
+        // /BaseTextGrades
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body =
+                """{"Grades":[{"Id":601,"Subject":{"Id":2},"Category":{"Id":91},"AddedBy":{"Id":21},""" +
+                    """"Grade":"Bardzo ładnie czyta z podziałem na role","Date":"2026-11-14","Semester":1}]}""",
+            ),
+        )
+        // /TextGrades (404)
+        server.enqueue(MockResponse(code = 404, body = ""))
+        // /PointGrades
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body =
+                """{"Grades":[{"Id":701,"Subject":{"Id":1},"Category":{"Id":92},"AddedBy":{"Id":20},""" +
+                    """"Grade":"18","GradeValue":18.0,"Date":"2026-11-15","Semester":1}]}""",
+            ),
+        )
+        // /Subjects
+        server.enqueue(MockResponse(code = 200, body = gradeFixture("subjects.json")))
+        // /Users
+        server.enqueue(MockResponse(code = 200, body = gradeFixture("users.json")))
+        // /DescriptiveGrades/Skills
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"Skills":[{"Id":90,"Name":"Czytanie ze zrozumieniem","Subject":{"Id":1}}]}""",
+            ),
+        )
+        // /DescriptiveGrades/Comments
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"Comments":[{"Id":700,"Text":"Brawo!"}]}""",
+            ),
+        )
+        // /TextGrades/Categories
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"Categories":[{"Id":91,"Name":"Aktywność","CountToTheAverage":false}]}""",
+            ),
+        )
+        // /PointGrades/Categories
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"Categories":[{"Id":92,"Name":"Kartkówka","Weight":2,"ValueTo":20.0}]}""",
+            ),
+        )
+
+        val grades = journal.fetchGrades()!!
+        assertEquals(3, grades.size)
+        val (dg, tg, pg) = grades
+        assertEquals("dg_501", dg.sourceId)
+        assertEquals("Matematyka", dg.subject)
+        assertEquals("6", dg.value)
+        assertEquals(6.0, dg.numericValue)
+        assertEquals("Czytanie ze zrozumieniem", dg.category)
+        assertEquals("Brawo!", dg.comment)
+
+        assertEquals("tg_601", tg.sourceId)
+        assertEquals("Język polski", tg.subject)
+        assertEquals("Bardzo ładn…", tg.value)
+        assertEquals("Bardzo ładnie czyta z podziałem na role", tg.comment)
+        assertEquals("Aktywność", tg.category)
+
+        assertEquals("pg_701", pg.sourceId)
+        assertEquals("18/20", pg.value)
+        assertEquals("Kartkówka", pg.category)
+        assertEquals(2, pg.weight)
     }
 }

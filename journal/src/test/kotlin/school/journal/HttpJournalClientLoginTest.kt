@@ -180,10 +180,11 @@ class HttpJournalClientLoginTest {
         server.enqueue(MockResponse(code = 200, body = """{"UserIdentifier":"1234567u"}""")) // TokenInfo
         server.enqueue(MockResponse(code = 200, body = "{}")) // UserInfo
         server.enqueue(MockResponse(code = 200, body = """{"Grades":[]}""")) // GET /gateway/api/2.0/Grades
+        repeat(5) { server.enqueue(MockResponse(code = 404, body = "")) }
 
         gatewayClient.login()
         assertEquals(emptyList(), gatewayClient.fetchGrades())
-        assertEquals(7, server.requestCount)
+        assertEquals(12, server.requestCount)
     }
 
     @Test

@@ -48,7 +48,7 @@ internal data class GradeCategoriesResponseDto(
 internal data class GradeCommentDto(
     @SerialName("Id") val id: Long,
     @SerialName("Grade") val grade: ApiRefDto? = null,
-    @SerialName("Text") val text: String = "",
+    @SerialName("Text") val text: String? = null,
 )
 
 @Serializable
@@ -57,8 +57,8 @@ internal data class GradeCommentsResponseDto(@SerialName("Comments") val comment
 @Serializable
 internal data class UserDto(
     @SerialName("Id") val id: Long,
-    @SerialName("FirstName") val firstName: String = "",
-    @SerialName("LastName") val lastName: String = "",
+    @SerialName("FirstName") val firstName: String? = null,
+    @SerialName("LastName") val lastName: String? = null,
 )
 
 @Serializable

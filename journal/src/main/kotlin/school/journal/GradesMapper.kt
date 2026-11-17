@@ -25,7 +25,7 @@ internal object GradesMapper {
             null
         }
         val teacher = users[dto.addedBy.id]?.let { user ->
-            listOf(user.firstName.trim(), user.lastName.trim())
+            listOfNotNull(user.firstName?.trim(), user.lastName?.trim())
                 .filter { it.isNotEmpty() }
                 .joinToString(" ")
                 .ifEmpty { "?" }

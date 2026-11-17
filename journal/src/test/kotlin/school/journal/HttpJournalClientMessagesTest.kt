@@ -30,23 +30,48 @@ class HttpJournalClientMessagesTest {
     private fun fixture(name: String): String =
         checkNotNull(javaClass.getResource("/fixtures/messages/$name")?.readText())
 
-    private fun client(pageLimit: Int = 2): HttpJournalClient {
+    private fun authFixture(name: String): String =
+        checkNotNull(javaClass.getResource("/fixtures/auth/$name")?.readText())
+
+    private fun loggedInClient(pageLimit: Int = 2): HttpJournalClient {
+        server.enqueue(MockResponse(code = 200, body = authFixture("login_page.html")))
+        server.enqueue(MockResponse(code = 200, body = "ok"))
+        server.enqueue(MockResponse(code = 200, body = authFixture("me.json")))
+        server.enqueue(MockResponse(code = 200, body = authFixture("accounts.json")))
+
         val base = server.url("/").toString().trimEnd('/')
-        return HttpJournalClient(
-            endpoints = JournalEndpoints(portal = base, api = base, messages = base),
+        val journal = HttpJournalClient(
+            endpoints = JournalEndpoints(portal = base, api = base, messages = base, gateway = base),
             login = "parent@example.test",
             passwordProvider = { "secret" },
             minRequestDelayMs = 0L,
             messagesPageLimit = pageLimit,
-        )
+        ).apply { login() }
+
+        repeat(4) { server.takeRequest() }
+        return journal
+    }
+
+    private fun enqueueMessagesActivation() {
+        server.enqueue(MockResponse(code = 200, body = """{"Token":"auto-tok-123"}"""))
+        server.enqueue(MockResponse(code = 200, body = "ok"))
+        server.enqueue(MockResponse(code = 200, body = "ok"))
+    }
+
+    private fun assertActivationRequests() {
+        assertEquals("POST", server.takeRequest().method)
+        assertEquals("GET", server.takeRequest().method)
+        assertEquals("GET", server.takeRequest().method)
     }
 
     @Test
     fun `paging collects all pages using GET only`() {
+        val journal = loggedInClient(pageLimit = 2)
+        enqueueMessagesActivation()
         server.enqueue(MockResponse(code = 200, body = fixture("inbox_page1.json")))
         server.enqueue(MockResponse(code = 200, body = fixture("inbox_page2.json")))
 
-        val headers = client(pageLimit = 2).fetchMessageHeaders()
+        val headers = journal.fetchMessageHeaders()
 
         assertEquals(3, headers.size)
         assertEquals("m_4471", headers[0].sourceId)
@@ -62,6 +87,7 @@ class HttpJournalClientMessagesTest {
         assertEquals("m_4469", headers[2].sourceId)
         assertEquals("Dzień wolny", headers[2].subject)
 
+        assertActivationRequests()
         repeat(2) {
             assertEquals("GET", server.takeRequest().method)
         }
@@ -69,37 +95,48 @@ class HttpJournalClientMessagesTest {
 
     @Test
     fun `empty inbox returns empty list`() {
+        val journal = loggedInClient()
+        enqueueMessagesActivation()
         server.enqueue(MockResponse(code = 200, body = fixture("inbox_empty.json")))
 
-        assertEquals(emptyList(), client().fetchMessageHeaders())
+        assertEquals(emptyList(), journal.fetchMessageHeaders())
+        assertActivationRequests()
         assertEquals("GET", server.takeRequest().method)
     }
 
     @Test
     fun `broken inbox json throws JournalUnavailable layout_changed_messages`() {
+        val journal = loggedInClient()
+        enqueueMessagesActivation()
         server.enqueue(MockResponse(code = 200, body = fixture("inbox_broken.json")))
 
-        val ex = assertFailsWith<JournalUnavailable> { client().fetchMessageHeaders() }
+        val ex = assertFailsWith<JournalUnavailable> { journal.fetchMessageHeaders() }
         assertEquals("layout_changed:messages", ex.message)
     }
 
     @Test
     fun `fetchMessage parses attachments and sanitises html body using GET only`() {
+        val firstJournal = loggedInClient()
+        enqueueMessagesActivation()
         server.enqueue(MockResponse(code = 200, body = fixture("message_with_attachments.json")))
-        val withAttachments = client().fetchMessage("m_4471")
+        val withAttachments = firstJournal.fetchMessage("m_4471")
         assertEquals(
             listOf(Attachment("plan_wycieczki.pdf"), Attachment("zgoda_rodzicow.docx")),
             withAttachments.attachments,
         )
         assertEquals("Plan wycieczki w załączniku.", withAttachments.bodyText)
+        assertActivationRequests()
         assertEquals("GET", server.takeRequest().method)
 
+        val secondJournal = loggedInClient()
+        enqueueMessagesActivation()
         server.enqueue(MockResponse(code = 200, body = fixture("message_html_body.json")))
-        val htmlMsg = client().fetchMessage("m_4472")
+        val htmlMsg = secondJournal.fetchMessage("m_4472")
         assertFalse(htmlMsg.bodyHtml.contains("<script"))
         assertFalse(htmlMsg.bodyHtml.contains("onclick"))
         assertFalse(htmlMsg.bodyHtml.contains("style="))
         assertTrue(htmlMsg.bodyText.contains("Dzień dobry!"))
+        assertActivationRequests()
         assertEquals("GET", server.takeRequest().method)
     }
 }

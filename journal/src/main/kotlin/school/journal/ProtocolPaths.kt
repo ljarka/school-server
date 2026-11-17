@@ -17,6 +17,10 @@ internal object ProtocolPaths {
     const val API_COMMENTS_PATH = "/Grades/Comments"
     const val API_USERS_PATH = "/Users"
     const val API_AUTO_LOGIN_TOKEN_PATH = "/AutoLoginToken"
+    const val AUTO_LOGIN_GATEWAY_PREFIX = "/loguj/token/"
+    const val AUTO_LOGIN_GATEWAY_SUFFIX = "/przenies/uczen/widok/centrum_powiadomien"
+    const val MOBILE_USER_AGENT =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 LibrusMobileApp"
 
     const val MESSAGES_ACTIVATION_PATH = "/wiadomosci3"
     const val MESSAGES_INBOX_PATH = "/api/inbox/messages"

@@ -1,5 +1,8 @@
 package school.journal
 
+import java.net.URLEncoder
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
 import okhttp3.MultipartBody
@@ -70,9 +73,9 @@ class HttpJournalClient(
             ProtocolPaths.API_COMMENTS_PATH,
             "comments",
         ).comments
-            .filter { it.grade != null && it.text.isNotBlank() }
+            .filter { it.grade != null && !it.text.isNullOrBlank() }
             .groupBy { it.grade!!.id }
-            .mapValues { (_, list) -> list.joinToString("\n") { it.text.trim() } }
+            .mapValues { (_, list) -> list.joinToString("\n") { it.text.orEmpty().trim() } }
 
         val users = decodeLookup<UsersResponseDto>(
             ProtocolPaths.API_USERS_PATH,
@@ -144,8 +147,12 @@ class HttpJournalClient(
     }
 
     private fun getMessagesJson(path: String): String {
-        if (isGatewayMode && !messagesActivated) {
-            activateGatewayMessages()
+        if (!messagesActivated) {
+            if (isGatewayMode) {
+                activateGatewayMessages()
+            } else {
+                activatePortalMessages()
+            }
         }
 
         val headers = mapOf(
@@ -156,9 +163,17 @@ class HttpJournalClient(
             url = endpoints.messagesUrl(path),
             headers = headers,
         )
-        if ((res.code == 401 || res.code == 403) && isGatewayMode) {
-            performGatewayLogin()
-            activateGatewayMessages()
+        if (res.code == 401 || res.code == 403) {
+            if (isGatewayMode) {
+                performGatewayLogin()
+                activateGatewayMessages()
+            } else {
+                tokenProvider.refresh(
+                    fetchFresh = { childLogin -> fetchFreshChildAccount(childLogin) },
+                    relogin = { performPortalLogin() },
+                )
+                activatePortalMessages()
+            }
             val retry = session.get(
                 url = endpoints.messagesUrl(path),
                 headers = headers,
@@ -166,21 +181,12 @@ class HttpJournalClient(
             if (retry.code == 401 || retry.code == 403) {
                 throw JournalUnavailable("auth_refresh_failed")
             }
-            if (retry.code >= 500) {
-                throw JournalUnavailable("http_${retry.code}")
-            }
-            if (retry.code !in 200..299) {
+            if (retry.code >= 500 || retry.code !in 200..299) {
                 throw JournalUnavailable("http_${retry.code}")
             }
             return retry.body
         }
-        if (res.code == 401 || res.code == 403) {
-            throw JournalUnavailable("auth_refresh_failed")
-        }
-        if (res.code >= 500) {
-            throw JournalUnavailable("http_${res.code}")
-        }
-        if (res.code !in 200..299) {
+        if (res.code >= 500 || res.code !in 200..299) {
             throw JournalUnavailable("http_${res.code}")
         }
         return res.body
@@ -465,14 +471,73 @@ class HttpJournalClient(
             url = endpoints.gatewayUrl(ProtocolPaths.MESSAGES_ACTIVATION_PATH),
             headers = mapOf("User-Agent" to BROWSER_USER_AGENT),
         )
-        if (res.code >= 500) {
-            throw JournalUnavailable("http_${res.code}")
-        }
-        if (res.code !in 200..299) {
+        if (res.code >= 500 || res.code !in 200..299) {
             throw JournalUnavailable("http_${res.code}")
         }
         messagesActivated = true
     }
+
+    private fun activatePortalMessages() {
+        val token = tokenProvider.currentToken()
+            ?: tokenProvider.refresh(
+                fetchFresh = { childLogin -> fetchFreshChildAccount(childLogin) },
+                relogin = { performPortalLogin() },
+            )
+        val autoLoginRes = postAutoLoginToken(token).let { res ->
+            if (res.code == 401) {
+                val refreshed = tokenProvider.refresh(
+                    fetchFresh = { childLogin -> fetchFreshChildAccount(childLogin) },
+                    relogin = { performPortalLogin() },
+                )
+                postAutoLoginToken(refreshed)
+            } else {
+                res
+            }
+        }
+        if (autoLoginRes.code == 401 || autoLoginRes.code == 403) {
+            throw JournalUnavailable("auth_refresh_failed")
+        }
+        if (autoLoginRes.code >= 500 || autoLoginRes.code !in 200..299) {
+            throw JournalUnavailable("http_${autoLoginRes.code}")
+        }
+        val autoLoginToken = try {
+            json.decodeFromString<AutoLoginTokenDto>(autoLoginRes.body).token
+        } catch (e: Exception) {
+            throw JournalUnavailable("layout_changed:auto_login_token", e)
+        }
+        if (autoLoginToken.isBlank()) {
+            throw JournalUnavailable("layout_changed:auto_login_token")
+        }
+
+        val encoded = URLEncoder.encode(autoLoginToken, "UTF-8")
+        val gatewayLoginRes = session.get(
+            url = endpoints.gatewayUrl(
+                "${ProtocolPaths.AUTO_LOGIN_GATEWAY_PREFIX}$encoded${ProtocolPaths.AUTO_LOGIN_GATEWAY_SUFFIX}",
+            ),
+            headers = mapOf("User-Agent" to ProtocolPaths.MOBILE_USER_AGENT),
+        )
+        if (gatewayLoginRes.code == 401 || gatewayLoginRes.code == 403) {
+            throw JournalUnavailable("auth_refresh_failed")
+        }
+        if (gatewayLoginRes.code >= 500 || gatewayLoginRes.code !in 200..299) {
+            throw JournalUnavailable("http_${gatewayLoginRes.code}")
+        }
+
+        activateGatewayMessages()
+    }
+
+    private fun postAutoLoginToken(accessToken: String): HttpResponseData = session.postForm(
+        url = endpoints.apiUrl(ProtocolPaths.API_AUTO_LOGIN_TOKEN_PATH),
+        body = FormBody.Builder().build(),
+        headers = mapOf(
+            "Accept" to "application/json",
+            "Authorization" to "Bearer $accessToken",
+            "User-Agent" to ProtocolPaths.MOBILE_USER_AGENT,
+        ),
+    )
+
+    @Serializable
+    private data class AutoLoginTokenDto(@SerialName("Token") val token: String = "")
 
     private fun checkGatewayStep(res: HttpResponseData) {
         if (res.code >= 500) {

@@ -129,4 +129,24 @@ class HttpJournalClientGradesTest {
         gatewayClient.login()
         assertEquals(emptyList(), gatewayClient.fetchGrades())
     }
+
+    @Test
+    fun `fetchGrades tolerates null user names`() {
+        val journal = loggedInClient()
+
+        server.enqueue(MockResponse(code = 200, body = gradeFixture("grades.json")))
+        server.enqueue(MockResponse(code = 200, body = gradeFixture("subjects.json")))
+        server.enqueue(MockResponse(code = 200, body = gradeFixture("categories.json")))
+        server.enqueue(MockResponse(code = 200, body = """{"Comments":[{"Id":1,"Grade":{"Id":8812},"Text":null}]}"""))
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"Users":[{"Id":33,"FirstName":null,"LastName":null}]}""",
+            ),
+        )
+
+        val grades = journal.fetchGrades()
+        assertEquals(6, grades.size)
+        assertEquals("?", grades.first().teacher)
+    }
 }

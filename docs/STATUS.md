@@ -55,6 +55,12 @@ Everything that knows the provider, isolated in `journal/`.
 | [T-014](tasks/T-014-multi-child.md) | Multi-child sync, `/children`, `?child=` (ADR 0013) | `done` |
 | [T-015](tasks/T-015-review-fixes.md) | Fixes from the code review (ADR 0014) | `done` |
 
+### Phase 6 — v1.x data sources
+
+| Task | Description | Status |
+|------|-------------|--------|
+| [T-016](tasks/T-016-announcements.md) | Announcements: fetch, store, changes, `/announcements` | `ready` |
+
 Order: T-001 first. Then T-002/T-003/T-004 and T-005→T-006/T-007 can go in parallel.
 T-008 needs T-003 + T-006/T-007; T-009 needs T-005 + T-008; T-010/T-011 need T-004 + T-009.
 

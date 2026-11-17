@@ -111,5 +111,7 @@ from the reference SDK's schema): `notices.json`, `notices_empty.json`, `notices
 
 ## Remaining
 
-- Live check of the notice-board field names and dates against the real account — part of T-013,
-  `blocked: needs owner`.
+- None. Owner's live run 2026-11-17: all notice-board entries came with subject, body, author,
+  start/end date and creation time, so the assumed field names are right. The running install was
+  updated by rebuilding the `message` table in place (backup kept next to the database), because the
+  columns were added without a migration.

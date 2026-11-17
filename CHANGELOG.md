@@ -10,3 +10,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial School Server implementation: portal authentication, grades and messages sync,
   SQLite storage with migrations, REST API with OpenAPI/Swagger UI, and Docker packaging.
+- School notice-board announcements in `/api/v1/messages`, marked with `type: announcement`,
+  with `validFrom` / `validTo` and a `type` filter on `/messages` and `/messages/read-all`.

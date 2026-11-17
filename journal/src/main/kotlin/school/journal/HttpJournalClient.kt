@@ -148,16 +148,20 @@ class HttpJournalClient(
             activateGatewayMessages()
         }
 
+        val headers = mapOf(
+            "Accept" to "application/json",
+            "User-Agent" to BROWSER_USER_AGENT,
+        )
         val res = session.get(
             url = endpoints.messagesUrl(path),
-            headers = mapOf("Accept" to "application/json"),
+            headers = headers,
         )
         if ((res.code == 401 || res.code == 403) && isGatewayMode) {
             performGatewayLogin()
             activateGatewayMessages()
             val retry = session.get(
                 url = endpoints.messagesUrl(path),
-                headers = mapOf("Accept" to "application/json"),
+                headers = headers,
             )
             if (retry.code == 401 || retry.code == 403) {
                 throw JournalUnavailable("auth_refresh_failed")

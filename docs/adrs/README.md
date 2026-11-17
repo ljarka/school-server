@@ -19,6 +19,7 @@ A changed decision gets a new ADR; the old one is marked superseded, never rewri
 | [0012](0012-school-id-gateway-login.md) | School-issued numeric login via OAuth + Gateway API 2.0 | accepted |
 | [0013](0013-multi-child-api.md) | Multi-child sync, `GET /api/v1/children`, and `?child=` filter | accepted |
 | [0014](0014-sync-never-deletes-on-partial-data.md) | Partial data (denied grades, cut inbox) never produces deletions; rejected credentials always stop the sync | accepted (agent decision) |
+| [0015](0015-announcements-in-messages.md) | Announcements served by the message endpoints with `type: announcement` | accepted (owner decision) |
 
 Agent-made decisions are welcome (AGENTS.md "Autonomy"): mark them
 `accepted (agent decision, YYYY-MM-DD)`; the owner may supersede them later.

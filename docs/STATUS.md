@@ -59,7 +59,7 @@ Everything that knows the provider, isolated in `journal/`.
 
 | Task | Description | Status |
 |------|-------------|--------|
-| [T-016](tasks/T-016-announcements.md) | Announcements: fetch, store, changes, `/announcements` | `ready` |
+| [T-016](tasks/T-016-announcements.md) | Announcements in `/messages` with `type: announcement` (ADR 0015) | `ready` |
 
 Order: T-001 first. Then T-002/T-003/T-004 and T-005→T-006/T-007 can go in parallel.
 T-008 needs T-003 + T-006/T-007; T-009 needs T-005 + T-008; T-010/T-011 need T-004 + T-009.

@@ -13,7 +13,8 @@ COPY model model
 COPY journal journal
 COPY server server
 
-RUN ./gradlew :server:installDist --no-daemon
+ARG APP_VERSION=dev
+RUN ./gradlew :server:installDist --no-daemon -PappVersion=${APP_VERSION}
 
 FROM eclipse-temurin:21-jre
 

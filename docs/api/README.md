@@ -63,6 +63,7 @@ Always `{"error": {"code": "...", "message": "..."}}`. Switch on `code`, show `m
 | 400 | `BAD_REQUEST` | Fix the parameter |
 | 401 | `UNAUTHORIZED` | Ask the user for the key again (header `WWW-Authenticate: School-Key` distinguishes it from other 401s) |
 | 404 | `NOT_FOUND` | Remove the item locally |
+| 404 | `CHILD_NOT_FOUND` | The `child` filter is unknown; reload `/api/v1/children` |
 | 409 | `SYNC_IN_PROGRESS` / `AUTH_FAILED` | Wait / tell the user the server's e-journal login is wrong |
 | 429 | `TOO_MANY_WRONG_KEYS` / `SYNC_TOO_SOON` | Wait `Retry-After` seconds |
 | 503 | `NO_DATA_YET` / `STORAGE_UNAVAILABLE` | Retry later |

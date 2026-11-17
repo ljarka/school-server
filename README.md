@@ -1,10 +1,11 @@
 # School Server
 
-A small self-hosted server that keeps an eye on your child's school e-journal (parent account) and gives you **grades and messages** through a simple REST API, together with a feed of **what changed** since you last looked.
+A small self-hosted server that keeps an eye on your children's school e-journal (parent account) and gives you **grades and messages** through a simple REST API, together with a feed of **what changed** since you last looked.
 
 - Checks the e-journal every 15 minutes (configurable)
 - Remembers everything in a local SQLite database, so the API keeps working when the e-journal is down
 - Tells you what's new: new or changed grades, new messages
+- Follows every child linked to your parent account (or just one, if you prefer)
 - Tracks which messages you have read, on this server
 - Read-only towards the e-journal: it never sends, deletes or changes anything there
 - One Docker container, one `.env` file, one API key
@@ -24,13 +25,15 @@ wget -O .env https://github.com/ljarka/school-server/releases/latest/download/ex
 Open `.env` and fill in at least:
 
 ```ini
-SCHOOL_JOURNAL_URL=https://family-portal.example
-SCHOOL_JOURNAL_API_URL=https://api.example
-SCHOOL_JOURNAL_MESSAGES_URL=https://messages.example
+SCHOOL_JOURNAL_DOMAIN=e-journal.example
 SCHOOL_LOGIN=you@example.com
 SCHOOL_PASSWORD=your-parent-password
 SCHOOL_API_KEY=a-long-random-string
 ```
+
+`SCHOOL_JOURNAL_DOMAIN` is the e-journal's main domain; the server derives the addresses of the parent
+portal, data API and messages service from it. `SCHOOL_LOGIN` is either your parent-portal e-mail or the
+login issued by the school (the one without `@`).
 
 Generate a key with e.g. `openssl rand -hex 32`. Your login and password go into `.env` as plain text, so make the file readable only by you:
 
@@ -66,17 +69,19 @@ Everything is set in `.env`.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `SCHOOL_JOURNAL_URL` | – | Address of the e-journal's family portal, where you log in as a parent (required, `https://`) |
-| `SCHOOL_JOURNAL_API_URL` | – | Address of the e-journal's data API (required) |
-| `SCHOOL_JOURNAL_MESSAGES_URL` | – | Address of the e-journal's messages service (required) |
-| `SCHOOL_LOGIN` | – | Parent portal login, usually your e-mail (required) |
-| `SCHOOL_CHILD` | first child | Which child to follow (id or login) if your parent account has several |
+| `SCHOOL_JOURNAL_DOMAIN` | – | The e-journal's main domain, e.g. `e-journal.example` (required unless all the URLs below are set) |
+| `SCHOOL_JOURNAL_URL` | from domain | Optional override: address of the parent portal (`https://`) |
+| `SCHOOL_JOURNAL_API_URL` | from domain | Optional override: address of the data API |
+| `SCHOOL_JOURNAL_MESSAGES_URL` | from domain | Optional override: address of the messages service |
+| `SCHOOL_JOURNAL_GATEWAY_URL` | from domain | Optional override: address used for school-issued logins (required for those if no domain is set) |
+| `SCHOOL_LOGIN` | – | Parent-portal e-mail, or the login issued by the school (required) |
+| `SCHOOL_CHILD` | all children | Follow only this child (id or login). Leave empty to follow every child linked to the account. |
 | `SCHOOL_PASSWORD` | – | Parent password (required, unless `SCHOOL_PASSWORD_FILE` is set) |
 | `SCHOOL_PASSWORD_FILE` | – | Optional: path to a file holding the password, e.g. a Docker secret. Used instead of `SCHOOL_PASSWORD`. |
 | `SCHOOL_API_KEY` | – | Key the API asks for in the `X-School-Key` header. If you leave it empty, anyone who can reach the server can read your data, so only do that on a trusted home network. |
 | `SYNC_INTERVAL_MINUTES` | `15` | How often to check the e-journal |
 | `TRUST_PROXY` | – | Set to `cloudflare` when the server is behind a Cloudflare Tunnel (see below) |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warning`, `error` |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `SCHOOL_VERSION` | `latest` | Image tag to run (compose only) |
 | `SCHOOL_PORT` | `5100` | Port on your machine (compose only). Pick a port no other service uses, e.g. not `5000` if Picfort server runs on the same machine. |
 | `DATA_LOCATION` | `./data` | Folder for the database (compose only) |
@@ -124,16 +129,20 @@ Every endpoint except `/health`, `/docs` and `/api/v1/openapi.yaml` needs the `X
 | Method | Path | Description |
 |---|---|---|
 | GET | `/health` | Is the server up (no key needed) |
-| GET | `/api/v1/status` | Last sync, its result, and `lastEventId` |
-| GET | `/api/v1/grades` | Grades. Filters: `subject`, `semester`, `since` |
+| GET | `/api/v1/status` | Last sync, its result, `lastEventId` and the server version |
+| GET | `/api/v1/children` | Children linked to the parent account |
+| GET | `/api/v1/grades` | Grades. Filters: `subject`, `semester`, `kind`, `since`, `includeDeleted` |
 | GET | `/api/v1/grades/subjects` | Subjects with their grades and average |
-| GET | `/api/v1/messages` | Messages. Filters: `unread=true`, `since`. Paging: `limit`, `cursor` |
+| GET | `/api/v1/messages` | Messages, newest first. Filters: `unread=true`, `since`, `includeDeleted`. Paging: `limit`, `cursor` |
 | GET | `/api/v1/messages/{id}` | One message with its full text |
 | PUT | `/api/v1/messages/{id}/read` | Mark as read (on this server only) |
 | DELETE | `/api/v1/messages/{id}/read` | Mark as unread |
 | POST | `/api/v1/messages/read-all` | Mark all as read |
 | GET | `/api/v1/changes` | What changed. `after=<event id>` or `since=<time>`, `type=grade\|message`, `limit` |
 | POST | `/api/v1/sync` | Check the e-journal now (at most once per 5 minutes) |
+
+With several children, every list endpoint and `/changes` take an optional `child=<id or login>`
+(from `/api/v1/children`). Without it you get all children; each item carries its `childId`.
 
 ### Following changes
 
@@ -148,6 +157,7 @@ curl -H "X-School-Key: $SCHOOL_API_KEY" "http://localhost:5100/api/v1/changes?af
   "items": [
     {
       "id": 121,
+      "childId": "101",
       "entityType": "grade",
       "entityId": "g_8812",
       "changeType": "created",
@@ -155,9 +165,12 @@ curl -H "X-School-Key: $SCHOOL_API_KEY" "http://localhost:5100/api/v1/changes?af
       "entity": { "subject": "Mathematics", "value": "5", "category": "Test" }
     }
   ],
-  "nextCursor": 121
+  "nextCursor": 121,
+  "hasMore": false
 }
 ```
+
+Keep asking with `after=<nextCursor>` while `hasMore` is `true`.
 
 `changeType` is `created`, `updated` (with a `diff` of the changed fields) or `deleted`.
 
@@ -173,7 +186,8 @@ The first sync reports **every** existing grade and message as `created`. If you
 |---|---|
 | `400` | Bad query parameter |
 | `401` | Missing or wrong API key |
-| `404` | No such grade or message |
+| `404` | No such grade or message, or unknown `child` (`CHILD_NOT_FOUND`) |
+| `409` | `/sync` while a sync is running, or after the e-journal rejected the login |
 | `429` | Too many wrong keys, or `/sync` called too often |
 | `503` | No data yet and the e-journal can't be reached |
 
@@ -200,7 +214,7 @@ Kotlin + Ktor, built with Gradle. Modules: `:model` (data types and API contract
 ./gradlew ktlintFormat      # fix formatting
 ```
 
-Tests never contact a real e-journal; they replay recorded, anonymised pages.
+Tests never contact a real e-journal; they replay synthetic, anonymised responses.
 
 Design notes are in [`docs/`](docs/): the specification, architecture decisions (`docs/adrs`) and tasks (`docs/tasks`).
 
@@ -210,8 +224,9 @@ Design notes are in [`docs/`](docs/): the specification, architecture decisions 
 
 ## Troubleshooting
 
-- **`/status` shows `auth_failed`.** The e-journal rejected the login. The server stops trying so your account doesn't get locked. Fix `SCHOOL_LOGIN` / `SCHOOL_PASSWORD`, then run `docker compose up -d` again.
+- **`/status` shows `auth_failed`.** The e-journal rejected the login (also when the password changes while the server runs). The server stops trying so your account doesn't get locked. Fix `SCHOOL_LOGIN` / `SCHOOL_PASSWORD`, then run `docker compose up -d` again.
 - **`port is already allocated`.** Another service uses that port. Set a different `SCHOOL_PORT` in `.env` and point your Cloudflare Tunnel to it.
 - **Backups.** Everything is in `./data/school.db`. Copy that file while the container is stopped.
+- **A child has no grades.** Some accounts (e.g. kindergarten) may not see grades at all. The server then keeps whatever it already has and carries on with messages.
 - **Sync errors after an e-journal update.** The e-journal pages may have changed. Your saved data is still served. Check for a newer image with `docker compose pull`.
 - **Permission errors on `./data`.** The container runs as user `1000` and fixes ownership of `/data` on start. If you run it with `--user`, make sure that user can write to the folder.

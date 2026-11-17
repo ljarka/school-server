@@ -13,6 +13,12 @@ application {
     mainClass.set("school.server.MainKt")
 }
 
+tasks.named<Jar>("jar") {
+    manifest {
+        attributes("Implementation-Version" to project.version.toString())
+    }
+}
+
 tasks.named<ProcessResources>("processResources") {
     from("../docs/api/openapi.yaml") {
         into("")

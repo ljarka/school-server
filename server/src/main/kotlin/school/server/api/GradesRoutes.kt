@@ -16,7 +16,7 @@ fun Route.gradesRoutes(store: Store) {
     get("/grades") {
         ensureDataAvailable(store)
 
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         val subject = call.request.queryParameters["subject"]?.trim()?.ifEmpty { null }
         val semester = parseSemesterParam(call.request.queryParameters["semester"])
         val kind = parseKindParam(call.request.queryParameters["kind"])
@@ -39,7 +39,7 @@ fun Route.gradesRoutes(store: Store) {
     get("/grades/subjects") {
         ensureDataAvailable(store)
 
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         val semester = parseSemesterParam(call.request.queryParameters["semester"])
         val grades = store.listGrades(semester = semester, includeDeleted = false, childId = childId)
 

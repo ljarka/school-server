@@ -30,7 +30,7 @@ import school.model.JournalClient
 import school.model.MarkAllReadResponseDto
 import school.model.Message
 import school.model.MessageDetailDto
-import school.model.MessageHeader
+import school.model.MessageHeaderListing
 import school.model.MessagesPageDto
 import school.model.StatusDto
 import school.model.SubjectsListDto
@@ -337,7 +337,7 @@ class ApiContractTest {
 
             override fun fetchGrades(childId: String?): List<Grade> = emptyList()
 
-            override fun fetchMessageHeaders(childId: String?): List<MessageHeader> = emptyList()
+            override fun fetchMessageHeaders(childId: String?): MessageHeaderListing = MessageHeaderListing(emptyList())
 
             override fun fetchMessage(sourceId: String, childId: String?): Message = error("unused")
         }
@@ -441,5 +441,9 @@ class ApiContractTest {
         val child2Changes = client.get("/api/v1/changes?child=102") { header("X-School-Key", "test-key") }
         val child2ChangesDto = json.decodeFromString<ChangePageDto>(child2Changes.bodyAsText())
         assertEquals(listOf("g_2", "m_2"), child2ChangesDto.items.map { it.entityId })
+
+        val unknownChild = client.get("/api/v1/grades?child=999") { header("X-School-Key", "test-key") }
+        assertEquals(HttpStatusCode.NotFound, unknownChild.status)
+        assertTrue(unknownChild.bodyAsText().contains("CHILD_NOT_FOUND"))
     }
 }

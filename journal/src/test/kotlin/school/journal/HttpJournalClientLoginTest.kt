@@ -240,4 +240,59 @@ class HttpJournalClientLoginTest {
         assertEquals(listOf("101", "102"), children.map { it.id })
         assertEquals(listOf("123456u", "654321u"), children.map { it.login })
     }
+
+    @Test
+    fun `rejected password during token refresh surfaces as AuthRejected`() {
+        enqueueHappyLogin()
+        val journal = client()
+        journal.login()
+
+        server.enqueue(MockResponse(code = 401, body = "Expired")) // API call
+        server.enqueue(MockResponse(code = 401, body = "Expired")) // fresh child account -> null
+        server.enqueue(MockResponse(code = 200, body = fixture("login_page.html"))) // re-login page
+        server.enqueue(MockResponse(code = 401, body = "Unauthorized")) // re-login POST rejected
+
+        val ex = assertFailsWith<AuthRejected> { journal.getApiJson(ProtocolPaths.API_GRADES_PATH) }
+        assertEquals("rejected", ex.message)
+    }
+
+    @Test
+    fun `gateway 403 before the password is posted is retryable, not a credentials verdict`() {
+        val base = server.url("/").toString().trimEnd('/')
+        val gatewayClient = HttpJournalClient(
+            endpoints = JournalEndpoints(portal = base, api = "$base/3.0", messages = base, gateway = base),
+            login = "1234567u",
+            passwordProvider = { "secret-journal-password" },
+            minRequestDelayMs = 0L,
+        )
+        server.enqueue(MockResponse(code = 403, body = "<html>Blocked</html>"))
+
+        val ex = assertFailsWith<JournalUnavailable> { gatewayClient.login() }
+        assertEquals("http_403", ex.message)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `gateway page that only links to a 2fa path does not count as an interactive step`() {
+        val base = server.url("/").toString().trimEnd('/')
+        val gatewayClient = HttpJournalClient(
+            endpoints = JournalEndpoints(portal = base, api = "$base/3.0", messages = base, gateway = base),
+            login = "1234567u",
+            passwordProvider = { "secret-journal-password" },
+            minRequestDelayMs = 0L,
+        )
+        server.enqueue(MockResponse(code = 200, body = "ok"))
+        server.enqueue(MockResponse(code = 200, body = "auth"))
+        server.enqueue(MockResponse(code = 200, body = """{"status":"ok"}"""))
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """<html><script src="/js/2fa-bundle.js"></script><a href="/2fa">x</a></html>""",
+            ),
+        )
+        server.enqueue(MockResponse(code = 200, body = """{"UserIdentifier":""}"""))
+
+        gatewayClient.login()
+        assertEquals(5, server.requestCount)
+    }
 }

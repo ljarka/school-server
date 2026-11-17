@@ -70,15 +70,10 @@ fun main() {
     }
 
     val store = driver?.let { Store(SchoolDatabase(it)) }
+    store?.failInterruptedSyncRuns(Clock.System.now())
     val syncService = if (store != null) {
-        val baseEndpoints = config.journalDomain?.let { JournalEndpoints.fromDomain(it) }
         val journal = HttpJournalClient(
-            endpoints = JournalEndpoints(
-                portal = config.journalUrl.ifEmpty { baseEndpoints!!.portal },
-                api = config.journalApiUrl.ifEmpty { baseEndpoints!!.api },
-                messages = config.journalMessagesUrl.ifEmpty { baseEndpoints!!.messages },
-                gateway = config.journalGatewayUrl ?: baseEndpoints?.gateway,
-            ),
+            endpoints = journalEndpoints(config),
             login = config.login,
             passwordProvider = { config.password.reveal() },
             configuredChild = config.child,
@@ -172,6 +167,22 @@ fun Application.schoolModule(
             apiRoutes()
         }
     }
+}
+
+/**
+ * Explicit URLs win over the ones derived from SCHOOL_JOURNAL_DOMAIN. ConfigLoader guarantees that each
+ * of portal/API/messages is set either way.
+ */
+private fun journalEndpoints(config: Config): JournalEndpoints {
+    val derived = config.journalDomain?.let { JournalEndpoints.fromDomain(it) }
+    fun pick(explicit: String, fromDomain: String?, name: String): String =
+        explicit.ifEmpty { fromDomain ?: error("$name is not configured (checked by ConfigLoader)") }
+    return JournalEndpoints(
+        portal = pick(config.journalUrl, derived?.portal, "SCHOOL_JOURNAL_URL"),
+        api = pick(config.journalApiUrl, derived?.api, "SCHOOL_JOURNAL_API_URL"),
+        messages = pick(config.journalMessagesUrl, derived?.messages, "SCHOOL_JOURNAL_MESSAGES_URL"),
+        gateway = config.journalGatewayUrl ?: derived?.gateway,
+    )
 }
 
 private fun configureLogging(config: Config) {

@@ -1,6 +1,7 @@
 package school.journal
 
 import org.slf4j.LoggerFactory
+import school.model.AuthRejected
 import school.model.JournalUnavailable
 
 internal class TokenProvider {
@@ -48,7 +49,13 @@ internal class TokenProvider {
 
         val relogged = try {
             relogin()
-        } catch (e: Throwable) {
+        } catch (e: AuthRejected) {
+            // Credentials were rejected: this must reach SyncService as AuthRejected so it stops
+            // logging in (AGENTS.md rule 4). Wrapping it would turn it into a retryable error.
+            throw e
+        } catch (e: JournalUnavailable) {
+            throw e
+        } catch (e: Exception) {
             logger.debug("e-journal re-login failed during token refresh")
             throw JournalUnavailable("auth_refresh_failed", e)
         }

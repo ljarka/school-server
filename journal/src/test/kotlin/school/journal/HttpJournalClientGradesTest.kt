@@ -3,6 +3,7 @@ package school.journal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlinx.datetime.LocalDate
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -57,7 +58,7 @@ class HttpJournalClientGradesTest {
         server.enqueue(MockResponse(code = 200, body = gradeFixture("comments.json")))
         server.enqueue(MockResponse(code = 200, body = gradeFixture("users.json")))
 
-        val grades = journal.fetchGrades()
+        val grades = journal.fetchGrades()!!
         assertEquals(6, grades.size)
         assertEquals(
             Grade(
@@ -103,7 +104,7 @@ class HttpJournalClientGradesTest {
     }
 
     @Test
-    fun `gateway 403 AccessDeny on grades returns empty list without failing`() {
+    fun `gateway 403 AccessDeny on grades returns null so stored grades are kept`() {
         val base = server.url("/").toString().trimEnd('/')
         val gatewayClient = HttpJournalClient(
             endpoints = JournalEndpoints(portal = base, api = "$base/3.0", messages = base, gateway = base),
@@ -127,7 +128,7 @@ class HttpJournalClientGradesTest {
         )
 
         gatewayClient.login()
-        assertEquals(emptyList(), gatewayClient.fetchGrades())
+        assertNull(gatewayClient.fetchGrades())
     }
 
     @Test
@@ -145,13 +146,13 @@ class HttpJournalClientGradesTest {
             ),
         )
 
-        val grades = journal.fetchGrades()
+        val grades = journal.fetchGrades()!!
         assertEquals(6, grades.size)
         assertEquals("?", grades.first().teacher)
     }
 
     @Test
-    fun `fetchGrades returns empty list when portal API returns AccessDeny`() {
+    fun `fetchGrades returns null when portal API returns AccessDeny`() {
         val journal = loggedInClient()
         server.enqueue(
             MockResponse(
@@ -161,6 +162,6 @@ class HttpJournalClientGradesTest {
                     """"Message":"Account not have access to Grades resource"}""",
             ),
         )
-        assertEquals(emptyList(), journal.fetchGrades())
+        assertNull(journal.fetchGrades())
     }
 }

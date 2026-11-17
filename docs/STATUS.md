@@ -7,7 +7,7 @@ A small, private server on the family's own machine that watches the child's sch
 e-journal, one container, one `.env`, one API key. Picfort can show it on its school screen,
 but never depends on it (ADR 0006).
 
-**Updated:** 2026-11-16
+**Updated:** 2026-11-17
 
 ---
 
@@ -48,13 +48,20 @@ Everything that knows the provider, isolated in `journal/`.
 | [T-012](tasks/T-012-neutral-names-ci.md) | CI: tests, neutral-names check, GHCR release | `done` |
 | [T-013](tasks/T-013-e2e-and-readme.md) | End-to-end test, README check, first live run | `draft` |
 
+### Phase 5 — After the first review
+
+| Task | Description | Status |
+|------|-------------|--------|
+| [T-014](tasks/T-014-multi-child.md) | Multi-child sync, `/children`, `?child=` (ADR 0013) | `done` |
+| [T-015](tasks/T-015-review-fixes.md) | Fixes from the code review (ADR 0014) | `done` |
+
 Order: T-001 first. Then T-002/T-003/T-004 and T-005→T-006/T-007 can go in parallel.
 T-008 needs T-003 + T-006/T-007; T-009 needs T-005 + T-008; T-010/T-011 need T-004 + T-009.
 
 ### Later (not v1)
 Sending messages (v2, needs an ADR lifting AGENTS.md rule 1), announcements, attendance,
 homework, test calendar, timetable, lucky number; push / webhooks / SSE to Picfort; several
-parent accounts or children; attachment download.
+parent accounts; attachment download.
 
 ---
 
@@ -62,10 +69,12 @@ parent accounts or children; attachment download.
 
 Agents may change these on their own by recording the decision (AGENTS.md "Autonomy").
 
-- **One child** in v1, chosen with `SCHOOL_CHILD` (default: first, with a warning if several).
+- **All linked children** are synced; `SCHOOL_CHILD` restricts it to one (ADR 0013, supersedes the
+  single-child assumption).
 - **Change history kept forever** (rows are tiny).
 - **Repository and image are public** (owner, 2026-11-16) → provider never named in git (ADR 0006).
-- **Data source** decided: parent portal + JSON API v3 + new messages service (ADR 0011).
+- **Data source** decided: parent portal + JSON API v3 + new messages service (ADR 0011); school-issued
+  logins via the gateway (ADR 0012).
 - **Live verification** against the real account happens only in T-013 (`blocked: needs owner`).
 
 ## Known risks
@@ -80,4 +89,16 @@ Agents may change these on their own by recording the decision (AGENTS.md "Auton
 
 | Task | Commit | Date |
 |------|--------|------|
-| — | | |
+| T-001 | `aa92294`, `353c138` | 2026-11-16, 2026-11-17 |
+| T-002 | `cbe693d`, `29d5677`, `dbe45b5`, `0edbfd6` | 2026-11-16 – 17 |
+| T-003 | `67ea9bb` | 2026-11-16 |
+| T-004 | `4d775f1` | 2026-11-16 |
+| T-005 | `1924232`, `e56f84e` … `b443605` (ADR 0012: `9921251`) | 2026-11-16 – 17 |
+| T-006 | `c53bae1`, `25df2d4`, `756cf7a`, `74a364d` | 2026-11-16 – 17 |
+| T-007 | `4b80a10`, `8b38a09` | 2026-11-16 – 17 |
+| T-008 | `d782fd9` | 2026-11-16 |
+| T-009 | `7d58ddf` | 2026-11-16 |
+| T-010, T-011 | `80d96d3` | 2026-11-16 |
+| T-012 | `cb5ddba` | 2026-11-16 |
+| T-014 | `4e4222d`, `59ec50c`, `05f414e` | 2026-11-17 |
+| T-015 | see git log `T-015:` | 2026-11-17 |

@@ -27,3 +27,11 @@ with a different `.env`.
   of the base v1 schema (`Schema.sq` / `1.db`).
 - `JournalClient` accepts `childId: String?` on fetch methods and exposes `listChildren()`.
 - Supersedes the single-child limitation in ADR 0011.
+- The multi-child columns were folded into the base v1 schema instead of a v2 migration, because no
+  version had been released. A database created by a development build before that change also has
+  `user_version = 1` but lacks `child_id`, and the server will fail on it with SQL errors: delete that
+  `school.db` (grades and messages are rebuilt by the next sync; local read marks are lost). From the first release on, AGENTS.md rule 7 applies
+  without exceptions.
+- An unknown `?child=` value returns `404 CHILD_NOT_FOUND` (agent decision, 2026-11-17) instead of an
+  empty list, so a client with a stale child id notices.
+

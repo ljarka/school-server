@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import school.model.Attachment
 import school.model.JournalUnavailable
+import school.model.MessageHeaderListing
 
 class HttpJournalClientMessagesTest {
     private lateinit var server: MockWebServer
@@ -33,7 +34,7 @@ class HttpJournalClientMessagesTest {
     private fun authFixture(name: String): String =
         checkNotNull(javaClass.getResource("/fixtures/auth/$name")?.readText())
 
-    private fun loggedInClient(pageLimit: Int = 2): HttpJournalClient {
+    private fun loggedInClient(pageLimit: Int = 2, maxPages: Int = 50): HttpJournalClient {
         server.enqueue(MockResponse(code = 200, body = authFixture("login_page.html")))
         server.enqueue(MockResponse(code = 200, body = "ok"))
         server.enqueue(MockResponse(code = 200, body = authFixture("me.json")))
@@ -46,6 +47,7 @@ class HttpJournalClientMessagesTest {
             passwordProvider = { "secret" },
             minRequestDelayMs = 0L,
             messagesPageLimit = pageLimit,
+            maxMessagePages = maxPages,
         ).apply { login() }
 
         repeat(4) { server.takeRequest() }
@@ -71,7 +73,9 @@ class HttpJournalClientMessagesTest {
         server.enqueue(MockResponse(code = 200, body = fixture("inbox_page1.json")))
         server.enqueue(MockResponse(code = 200, body = fixture("inbox_page2.json")))
 
-        val headers = journal.fetchMessageHeaders()
+        val listing = journal.fetchMessageHeaders()
+        assertTrue(listing.complete)
+        val headers = listing.headers
 
         assertEquals(3, headers.size)
         assertEquals("m_4471", headers[0].sourceId)
@@ -99,7 +103,7 @@ class HttpJournalClientMessagesTest {
         enqueueMessagesActivation()
         server.enqueue(MockResponse(code = 200, body = fixture("inbox_empty.json")))
 
-        assertEquals(emptyList(), journal.fetchMessageHeaders())
+        assertEquals(MessageHeaderListing(emptyList(), complete = true), journal.fetchMessageHeaders())
         assertActivationRequests()
         assertEquals("GET", server.takeRequest().method)
     }
@@ -138,5 +142,17 @@ class HttpJournalClientMessagesTest {
         assertTrue(htmlMsg.bodyText.contains("Dzień dobry!"))
         assertActivationRequests()
         assertEquals("GET", server.takeRequest().method)
+    }
+
+    @Test
+    fun `listing cut at the page limit is reported as incomplete`() {
+        val journal = loggedInClient(pageLimit = 2, maxPages = 1)
+        enqueueMessagesActivation()
+        server.enqueue(MockResponse(code = 200, body = fixture("inbox_page1.json")))
+
+        val listing = journal.fetchMessageHeaders()
+
+        assertEquals(2, listing.headers.size)
+        assertFalse(listing.complete)
     }
 }

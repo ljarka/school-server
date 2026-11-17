@@ -1,5 +1,6 @@
 package school.server.sync
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -22,6 +23,7 @@ import school.model.Grade
 import school.model.JournalClient
 import school.model.JournalUnavailable
 import school.model.Message
+import school.model.MessageHeader
 import school.model.SyncRunStatus
 import school.server.store.Store
 import school.server.store.StoredMessage
@@ -61,6 +63,7 @@ class SyncService(
 ) {
     private val logger = LoggerFactory.getLogger(SyncService::class.java)
     private val mutex = Mutex()
+    private val manualLock = Any()
 
     @Volatile
     private var authState: AuthState = AuthState.UNKNOWN
@@ -111,29 +114,18 @@ class SyncService(
         consecutiveErrors = consecutiveErrors,
     )
 
-    fun canTriggerManualSync(): SyncResult.Skipped? {
-        val now = clock.now()
-        val prevManual = lastManualTriggerAt
-        if (prevManual != null) {
-            val elapsed = now - prevManual
-            if (elapsed < config.manualCooldown) {
-                val remaining = maxOf(1L, (config.manualCooldown - elapsed).inWholeSeconds)
-                return SyncResult.Skipped(reason = "too_soon", retryAfterSeconds = remaining)
-            }
-        }
-        if (mutex.isLocked) {
-            return SyncResult.Skipped(reason = "in_progress")
-        }
-        return null
-    }
-
-    suspend fun syncNow(manual: Boolean = false): SyncResult {
+    /**
+     * Starts a manual sync in [scope] unless it is not allowed right now. The cooldown check, the lock and
+     * the cooldown timestamp are taken together, so two concurrent requests cannot both start a sync.
+     *
+     * @return `null` when the sync was started, otherwise why it was not.
+     */
+    fun triggerManualSync(scope: CoroutineScope): SyncResult? {
         if (authState == AuthState.AUTH_FAILED) {
             return SyncResult.AuthFailed
         }
-
-        val now = clock.now()
-        if (manual) {
+        synchronized(manualLock) {
+            val now = clock.now()
             val prevManual = lastManualTriggerAt
             if (prevManual != null) {
                 val elapsed = now - prevManual
@@ -142,17 +134,27 @@ class SyncService(
                     return SyncResult.Skipped(reason = "too_soon", retryAfterSeconds = remaining)
                 }
             }
+            if (!mutex.tryLock()) {
+                return SyncResult.Skipped(reason = "in_progress")
+            }
+            lastManualTriggerAt = now
+            // invokeOnCompletion also fires when the job is cancelled before it starts,
+            // so the lock taken above is always released exactly once.
+            scope.launch { executeSyncRun(now) }.invokeOnCompletion { mutex.unlock() }
+            return null
         }
+    }
 
+    /** Runs one sync now unless another one is in progress (used by the scheduler loop). */
+    suspend fun syncNow(): SyncResult {
+        if (authState == AuthState.AUTH_FAILED) {
+            return SyncResult.AuthFailed
+        }
         if (!mutex.tryLock()) {
             return SyncResult.Skipped(reason = "in_progress")
         }
-
         return try {
-            if (manual) {
-                lastManualTriggerAt = now
-            }
-            executeSyncRun(now)
+            executeSyncRun(clock.now())
         } finally {
             mutex.unlock()
         }
@@ -168,143 +170,13 @@ class SyncService(
         return config.intervalMinutes.minutes + jitterSeconds.seconds
     }
 
-    private suspend fun executeSyncRun(startedAt: Instant): SyncResult {
+    private suspend fun executeSyncRun(startedAt: Instant): SyncResult = withContext(ioDispatcher) {
         val runId = store.insertSyncRun(startedAt)
-
-        return try {
-            val outcomes = withContext(ioDispatcher) {
-                if (!sessionLoggedIn) {
-                    journal.login()
-                    sessionLoggedIn = true
-                }
-
-                val discovered = journal.listChildren()
-                if (discovered.isNotEmpty()) {
-                    store.upsertChildAccounts(discovered, clock.now())
-                }
-                val targets = discovered.ifEmpty {
-                    listOf(ChildAccount(id = "default", login = "default", name = "default"))
-                }
-
-                targets.map { child ->
-                    var grades: List<Grade>? = null
-                    var gradesError: String? = null
-                    try {
-                        grades = journal.fetchGrades(child.id)
-                    } catch (e: AuthRejected) {
-                        throw e
-                    } catch (e: JournalUnavailable) {
-                        gradesError = e.message ?: "journal_unavailable"
-                    }
-
-                    var messages: List<Message>? = null
-                    var messagesError: String? = null
-                    try {
-                        val headers = journal.fetchMessageHeaders(child.id)
-                        val existingById = store.listMessages(
-                            includeDeleted = true,
-                            limit = 10_000,
-                            childId = child.id,
-                        ).associateBy { it.sourceId }
-
-                        messages = headers.map { header ->
-                            val existing = existingById[header.sourceId]
-                            if (existing != null && headerMatches(existing, header)) {
-                                Message(
-                                    sourceId = existing.sourceId,
-                                    sender = existing.sender,
-                                    subject = existing.subject,
-                                    sentAt = existing.sentAt,
-                                    bodyText = existing.bodyText!!,
-                                    bodyHtml = existing.bodyHtml ?: existing.bodyText,
-                                    attachments = existing.attachments,
-                                )
-                            } else {
-                                journal.fetchMessage(header.sourceId, child.id)
-                            }
-                        }
-                    } catch (e: AuthRejected) {
-                        throw e
-                    } catch (e: JournalUnavailable) {
-                        messagesError = e.message ?: "journal_unavailable"
-                    }
-
-                    ChildFetchOutcome(
-                        childId = child.id,
-                        grades = grades,
-                        gradesError = gradesError,
-                        messages = messages,
-                        messagesError = messagesError,
-                    )
-                }
-            }
-
-            val finishedAt = clock.now()
-            var changesCount = 0
-            var itemsFetched = 0
-            var firstError: String? = null
-
-            for (outcome in outcomes) {
-                val gradeChanges = if (outcome.grades != null) {
-                    detector.diffGrades(
-                        stored = store.listGrades(includeDeleted = true, childId = outcome.childId),
-                        fresh = outcome.grades,
-                        complete = true,
-                    )
-                } else {
-                    Changes()
-                }
-
-                val messageChanges = if (outcome.messages != null) {
-                    detector.diffMessages(
-                        stored = store.listMessages(includeDeleted = true, limit = 10_000, childId = outcome.childId),
-                        fresh = outcome.messages,
-                        complete = true,
-                    )
-                } else {
-                    Changes()
-                }
-
-                changesCount += store.applyChanges(
-                    syncRunId = runId,
-                    gradeChanges = gradeChanges,
-                    messageChanges = messageChanges,
-                    now = finishedAt,
-                    childId = outcome.childId,
-                )
-                itemsFetched += (outcome.grades?.size ?: 0) + (outcome.messages?.size ?: 0)
-                if (firstError == null) {
-                    firstError = outcome.gradesError ?: outcome.messagesError
-                }
-            }
-
-            if (firstError != null) {
-                consecutiveErrors += 1
-                store.finishSyncRun(
-                    id = runId,
-                    finishedAt = finishedAt,
-                    status = SyncRunStatus.ERROR,
-                    errorCode = firstError,
-                    itemsFetched = itemsFetched,
-                    changesDetected = changesCount,
-                )
-                logger.warn("Sync completed with error: {}", firstError)
-                SyncResult.Failed(firstError)
-            } else {
-                consecutiveErrors = 0
-                authState = AuthState.OK
-                store.setMeta("auth_state", "ok")
-                store.finishSyncRun(
-                    id = runId,
-                    finishedAt = finishedAt,
-                    status = SyncRunStatus.OK,
-                    errorCode = null,
-                    itemsFetched = itemsFetched,
-                    changesDetected = changesCount,
-                )
-                logger.info("Sync completed: {} items fetched, {} changes", itemsFetched, changesCount)
-                SyncResult.Ok(changesCount)
-            }
+        try {
+            storeOutcomes(runId, fetchAll())
+        } catch (e: CancellationException) {
+            runCatching { finishFailedRun(runId, "cancelled") }
+            throw e
         } catch (e: AuthRejected) {
             authState = AuthState.AUTH_FAILED
             sessionLoggedIn = false
@@ -322,45 +194,185 @@ class SyncService(
         } catch (e: JournalUnavailable) {
             val code = e.message ?: "journal_unavailable"
             consecutiveErrors += 1
-            store.finishSyncRun(
-                id = runId,
-                finishedAt = clock.now(),
-                status = SyncRunStatus.ERROR,
-                errorCode = code,
-                itemsFetched = 0,
-                changesDetected = 0,
-            )
+            finishFailedRun(runId, code)
             logger.warn("Sync failed: {}", code)
             SyncResult.Failed(code)
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             val code = "unexpected_error"
             consecutiveErrors += 1
-            store.finishSyncRun(
-                id = runId,
-                finishedAt = clock.now(),
-                status = SyncRunStatus.ERROR,
-                errorCode = code,
-                itemsFetched = 0,
-                changesDetected = 0,
-            )
+            finishFailedRun(runId, code)
             logger.error("Unexpected sync error", e)
             SyncResult.Failed(code)
         }
     }
 
-    private fun headerMatches(existing: StoredMessage, header: school.model.MessageHeader): Boolean =
-        existing.deletedAt == null &&
-            existing.bodyText != null &&
-            existing.sender == header.sender &&
-            existing.subject == header.subject &&
-            existing.sentAt == header.sentAt &&
-            existing.hasAttachments == header.hasAttachments
+    private fun finishFailedRun(runId: Long, code: String) {
+        store.finishSyncRun(
+            id = runId,
+            finishedAt = clock.now(),
+            status = SyncRunStatus.ERROR,
+            errorCode = code,
+            itemsFetched = 0,
+            changesDetected = 0,
+        )
+    }
+
+    private fun fetchAll(): List<ChildFetchOutcome> {
+        if (!sessionLoggedIn) {
+            journal.login()
+            sessionLoggedIn = true
+        }
+
+        val discovered = journal.listChildren()
+        if (discovered.isNotEmpty()) {
+            store.upsertChildAccounts(discovered, clock.now())
+        }
+        val targets = discovered.ifEmpty {
+            listOf(ChildAccount(id = DEFAULT_CHILD_ID, login = DEFAULT_CHILD_ID, name = DEFAULT_CHILD_ID))
+        }
+        return targets.map { child -> fetchChild(child.id) }
+    }
+
+    private fun fetchChild(childId: String): ChildFetchOutcome {
+        var grades: List<Grade>? = null
+        var gradesError: String? = null
+        try {
+            // null = the e-journal denies the grades resource for this account: keep what we have.
+            grades = journal.fetchGrades(childId)
+        } catch (e: JournalUnavailable) {
+            gradesError = e.message ?: "journal_unavailable"
+        }
+
+        var messages: List<Message>? = null
+        var messagesComplete = true
+        var messagesError: String? = null
+        try {
+            val listing = journal.fetchMessageHeaders(childId)
+            messagesComplete = listing.complete
+            val existingById = store.listMessages(
+                includeDeleted = true,
+                limit = Int.MAX_VALUE,
+                childId = childId,
+            ).associateBy { it.sourceId }
+
+            messages = listing.headers.map { header ->
+                val existing = existingById[header.sourceId]
+                if (existing != null && headerMatches(existing, header)) {
+                    existing.toMessage()
+                } else {
+                    journal.fetchMessage(header.sourceId, childId)
+                }
+            }
+        } catch (e: JournalUnavailable) {
+            messagesError = e.message ?: "journal_unavailable"
+        }
+
+        return ChildFetchOutcome(
+            childId = childId,
+            grades = grades,
+            gradesError = gradesError,
+            messages = messages,
+            messagesComplete = messagesComplete,
+            messagesError = messagesError,
+        )
+    }
+
+    private fun storeOutcomes(runId: Long, outcomes: List<ChildFetchOutcome>): SyncResult {
+        val finishedAt = clock.now()
+        var changesCount = 0
+        var itemsFetched = 0
+        var firstError: String? = null
+
+        for (outcome in outcomes) {
+            val gradeChanges = outcome.grades?.let { fresh ->
+                detector.diffGrades(
+                    stored = store.listGrades(includeDeleted = true, childId = outcome.childId),
+                    fresh = fresh,
+                    complete = true,
+                )
+            } ?: Changes()
+
+            val messageChanges = outcome.messages?.let { fresh ->
+                detector.diffMessages(
+                    stored = store.listMessages(
+                        includeDeleted = true,
+                        limit = Int.MAX_VALUE,
+                        childId = outcome.childId,
+                    ),
+                    fresh = fresh,
+                    complete = outcome.messagesComplete,
+                )
+            } ?: Changes()
+
+            changesCount += store.applyChanges(
+                syncRunId = runId,
+                gradeChanges = gradeChanges,
+                messageChanges = messageChanges,
+                now = finishedAt,
+                childId = outcome.childId,
+            )
+            itemsFetched += (outcome.grades?.size ?: 0) + (outcome.messages?.size ?: 0)
+            if (firstError == null) {
+                firstError = outcome.gradesError ?: outcome.messagesError
+            }
+        }
+
+        if (firstError != null) {
+            consecutiveErrors += 1
+            store.finishSyncRun(
+                id = runId,
+                finishedAt = finishedAt,
+                status = SyncRunStatus.ERROR,
+                errorCode = firstError,
+                itemsFetched = itemsFetched,
+                changesDetected = changesCount,
+            )
+            logger.warn("Sync completed with error: {}", firstError)
+            return SyncResult.Failed(firstError)
+        }
+
+        consecutiveErrors = 0
+        authState = AuthState.OK
+        store.setMeta("auth_state", "ok")
+        store.finishSyncRun(
+            id = runId,
+            finishedAt = finishedAt,
+            status = SyncRunStatus.OK,
+            errorCode = null,
+            itemsFetched = itemsFetched,
+            changesDetected = changesCount,
+        )
+        logger.info("Sync completed: {} items fetched, {} changes", itemsFetched, changesCount)
+        return SyncResult.Ok(changesCount)
+    }
+
+    private fun StoredMessage.toMessage(): Message = Message(
+        sourceId = sourceId,
+        sender = sender,
+        subject = subject,
+        sentAt = sentAt,
+        bodyText = bodyText!!,
+        bodyHtml = bodyHtml ?: bodyText,
+        attachments = attachments,
+    )
+
+    private fun headerMatches(existing: StoredMessage, header: MessageHeader): Boolean = existing.deletedAt == null &&
+        existing.bodyText != null &&
+        existing.sender == header.sender &&
+        existing.subject == header.subject &&
+        existing.sentAt == header.sentAt &&
+        existing.hasAttachments == header.hasAttachments
 
     private data class ChildFetchOutcome(
         val childId: String,
         val grades: List<Grade>?,
         val gradesError: String?,
         val messages: List<Message>?,
+        val messagesComplete: Boolean,
         val messagesError: String?,
     )
+
+    private companion object {
+        const val DEFAULT_CHILD_ID = "default"
+    }
 }

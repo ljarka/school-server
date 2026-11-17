@@ -7,10 +7,13 @@ import io.ktor.server.routing.get
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
+import org.slf4j.LoggerFactory
 import school.model.ChangeEventDto
 import school.model.ChangePageDto
 import school.model.EntityType
 import school.server.store.Store
+
+private val logger = LoggerFactory.getLogger("school.server.api.ChangesRoutes")
 
 fun Route.changesRoutes(store: Store) {
     val json = Json { encodeDefaults = true }
@@ -40,7 +43,7 @@ fun Route.changesRoutes(store: Store) {
             0L
         }
 
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         val since = parseInstantParam(sinceRaw, "since")
         val type = parseEntityTypeParam(call.request.queryParameters["type"])
         val limit = parseIntParam(call.request.queryParameters["limit"], "limit", default = 100, min = 1, max = 500)
@@ -54,18 +57,19 @@ fun Route.changesRoutes(store: Store) {
         val hasMore = rows.size > limit
         val pageRows = rows.take(limit)
 
-        val items = pageRows.map { event ->
+        val items = pageRows.mapNotNull { event ->
+            // Entities are only soft-deleted, so this should never miss; if the DB is inconsistent,
+            // skip the one event instead of failing the whole feed.
             val entityElement = when (event.entityType) {
-                EntityType.GRADE -> {
-                    val grade = store.getGrade(event.entityId, event.childId)
-                        ?: error("Missing grade ${event.entityId} for change event ${event.id}")
-                    json.encodeToJsonElement(grade.toDto())
+                EntityType.GRADE -> store.getGrade(event.entityId, event.childId)?.let {
+                    json.encodeToJsonElement(it.toDto())
                 }
-                EntityType.MESSAGE -> {
-                    val message = store.getMessage(event.entityId, event.childId)
-                        ?: error("Missing message ${event.entityId} for change event ${event.id}")
-                    json.encodeToJsonElement(message.toSummaryDto())
-                }
+                EntityType.MESSAGE ->
+                    store.getMessage(event.entityId, event.childId)?.let { json.encodeToJsonElement(it.toSummaryDto()) }
+            }
+            if (entityElement == null) {
+                logger.warn("Skipping change event {}: its {} is missing", event.id, event.entityType)
+                return@mapNotNull null
             }
             val diffObj = event.diffJson?.let { json.decodeFromString<JsonObject>(it) }
 
@@ -81,7 +85,7 @@ fun Route.changesRoutes(store: Store) {
             )
         }
 
-        val nextCursor = items.lastOrNull()?.id ?: afterId
+        val nextCursor = pageRows.lastOrNull()?.id ?: afterId
         call.respond(
             ChangePageDto(
                 items = items,

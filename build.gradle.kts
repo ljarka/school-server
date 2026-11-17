@@ -6,6 +6,9 @@ plugins {
 }
 
 subprojects {
+    // Release builds pass -PappVersion=<tag> (Dockerfile ARG APP_VERSION); local builds report "dev".
+    version = providers.gradleProperty("appVersion").getOrElse("dev")
+
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
 
     configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {

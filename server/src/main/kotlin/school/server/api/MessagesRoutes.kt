@@ -18,7 +18,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     get("/messages") {
         ensureDataAvailable(store)
 
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         val unreadOnly = parseBooleanParam(call.request.queryParameters["unread"], "unread")
         val since = parseInstantParam(call.request.queryParameters["since"], "since")
         val limit = parseIntParam(call.request.queryParameters["limit"], "limit", default = 50, min = 1, max = 100)
@@ -26,19 +26,17 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
         val cursor = cursorRaw?.let { decodeCursor(it) }
         val includeDeleted = parseBooleanParam(call.request.queryParameters["includeDeleted"], "includeDeleted")
 
-        val all = store.listMessages(
+        val rows = store.listMessagesPage(
             unreadOnly = unreadOnly,
             includeDeleted = includeDeleted,
-            limit = 10_000,
-            offset = 0,
+            since = since,
+            after = cursor?.let { it.sentAt to it.sourceId },
+            limit = limit + 1,
             childId = childId,
-        ).filter { msg ->
-            (since == null || msg.sentAt >= since) &&
-                (cursor == null || isAfterCursor(msg.sentAt, msg.sourceId, cursor))
-        }
+        )
 
-        val page = all.take(limit)
-        val hasMore = all.size > limit
+        val page = rows.take(limit)
+        val hasMore = rows.size > limit
         val nextCursor = if (hasMore && page.isNotEmpty()) {
             encodeCursor(page.last().sentAt, page.last().sourceId)
         } else {
@@ -56,7 +54,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     get("/messages/{id}") {
         val id = call.parameters["id"]
             ?: throw ApiException(HttpStatusCode.BadRequest, "BAD_REQUEST", "Missing parameter 'id'")
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         val msg = store.getMessage(id, childId)
             ?: throw ApiException(HttpStatusCode.NotFound, "NOT_FOUND", "Message not found")
         call.respond(msg.toDetailDto())
@@ -65,7 +63,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     put("/messages/{id}/read") {
         val id = call.parameters["id"]
             ?: throw ApiException(HttpStatusCode.BadRequest, "BAD_REQUEST", "Missing parameter 'id'")
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         val existing = store.getMessage(id, childId)
             ?: throw ApiException(HttpStatusCode.NotFound, "NOT_FOUND", "Message not found")
         if (existing.readAt == null) {
@@ -78,7 +76,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     delete("/messages/{id}/read") {
         val id = call.parameters["id"]
             ?: throw ApiException(HttpStatusCode.BadRequest, "BAD_REQUEST", "Missing parameter 'id'")
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         store.getMessage(id, childId)
             ?: throw ApiException(HttpStatusCode.NotFound, "NOT_FOUND", "Message not found")
         store.markMessageUnread(id, childId)
@@ -87,7 +85,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
     }
 
     post("/messages/read-all") {
-        val childId = store.resolveChildId(call.request.queryParameters["child"])
+        val childId = parseChildParam(store, call.request.queryParameters["child"])
         val marked = store.markAllMessagesRead(clock.now(), childId)
         call.respond(MarkAllReadResponseDto(marked = marked))
     }
@@ -106,6 +104,3 @@ private fun decodeCursor(raw: String): MessageCursor = try {
 } catch (e: Exception) {
     throw ApiException(HttpStatusCode.BadRequest, "BAD_REQUEST", "Invalid parameter 'cursor'")
 }
-
-private fun isAfterCursor(sentAt: Instant, sourceId: String, cursor: MessageCursor): Boolean =
-    sentAt < cursor.sentAt || (sentAt == cursor.sentAt && sourceId < cursor.sourceId)

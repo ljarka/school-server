@@ -162,11 +162,13 @@ docker compose up -d
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SCHOOL_JOURNAL_URL` | — | Family portal address, where parents log in (required, `https://`) |
-| `SCHOOL_JOURNAL_API_URL` | — | E-journal JSON API address (required) |
-| `SCHOOL_JOURNAL_MESSAGES_URL` | — | Messages service address (required) |
-| `SCHOOL_LOGIN` | — | Parent portal login (e-mail, required) |
-| `SCHOOL_CHILD` | first child | Child id or login, if the parent account has several |
+| `SCHOOL_JOURNAL_DOMAIN` | — | E-journal main domain; portal, API, messages and gateway addresses are derived from it (required unless the URLs below are all set) |
+| `SCHOOL_JOURNAL_URL` | from domain | Override: family portal address (`https://`) |
+| `SCHOOL_JOURNAL_API_URL` | from domain | Override: e-journal JSON API address |
+| `SCHOOL_JOURNAL_MESSAGES_URL` | from domain | Override: messages service address |
+| `SCHOOL_JOURNAL_GATEWAY_URL` | from domain | Override: gateway address for school-issued logins (ADR 0012) |
+| `SCHOOL_LOGIN` | — | Parent portal e-mail, or school-issued login without `@` (required) |
+| `SCHOOL_CHILD` | all children | Restrict sync to one child (id or login) (ADR 0013) |
 | `SCHOOL_PASSWORD` | — | Parent password (required unless `_FILE`) |
 | `SCHOOL_PASSWORD_FILE` | — | File with the password (Docker secret); wins over `SCHOOL_PASSWORD` |
 | `SCHOOL_API_KEY` | — | API key; required with `TRUST_PROXY=cloudflare` |

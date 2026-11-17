@@ -94,6 +94,16 @@ internal fun parseBooleanParam(raw: String?, name: String, default: Boolean = fa
     }
 }
 
+/**
+ * Resolves the optional `?child=` filter (id or login). Absent or blank means "all children";
+ * an unknown child is a 404 rather than a silently empty list.
+ */
+internal fun parseChildParam(store: Store, raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    return store.findChildId(raw)
+        ?: throw ApiException(HttpStatusCode.NotFound, "CHILD_NOT_FOUND", "Unknown child '${raw.trim()}'")
+}
+
 internal fun parseIntParam(raw: String?, name: String, default: Int, min: Int, max: Int): Int {
     if (raw == null) return default
     val parsed = raw.toIntOrNull()

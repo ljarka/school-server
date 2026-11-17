@@ -1,7 +1,10 @@
 package school.server.store
 
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.toJavaInstant
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import school.model.Attachment
@@ -77,7 +80,7 @@ class Store(private val db: SchoolDatabase) {
                 id = child.id,
                 login = child.login,
                 name = child.name,
-                updated_at = now.toString(),
+                updated_at = now.toDb(),
             )
         }
     }
@@ -86,9 +89,15 @@ class Store(private val db: SchoolDatabase) {
         ChildAccount(id = it.id, login = it.login, name = it.name)
     }
 
-    fun resolveChildId(selector: String?): String? {
-        val trimmed = selector?.trim()?.ifEmpty { null } ?: return null
-        return db.schemaQueries.findChildAccount(trimmed).executeAsOneOrNull()?.id ?: trimmed
+    /**
+     * Finds the child for an API `?child=` selector (id or login). Also accepts a raw child id that has
+     * stored data but no account row (e.g. the single-child "default"). Returns `null` when unknown.
+     */
+    fun findChildId(selector: String): String? {
+        val trimmed = selector.trim()
+        if (trimmed.isEmpty()) return null
+        db.schemaQueries.findChildAccount(trimmed).executeAsOneOrNull()?.let { return it.id }
+        return trimmed.takeIf { db.schemaQueries.hasDataForChild(it).executeAsOne() }
     }
 
     fun upsertGrade(
@@ -114,16 +123,16 @@ class Store(private val db: SchoolDatabase) {
             comment = grade.comment,
             issued_on = grade.issuedOn.toString(),
             content_hash = contentHash,
-            first_seen_at = firstSeenAt.toString(),
-            updated_at = now.toString(),
-            deleted_at = deletedAt?.toString(),
+            first_seen_at = firstSeenAt.toDb(),
+            updated_at = now.toDb(),
+            deleted_at = deletedAt?.toDb(),
         )
     }
 
     fun softDeleteGrade(sourceId: String, now: Instant, childId: String = "default") {
         db.schemaQueries.softDeleteGrade(
-            deleted_at = now.toString(),
-            updated_at = now.toString(),
+            deleted_at = now.toDb(),
+            updated_at = now.toDb(),
             child_id = childId,
             source_id = sourceId,
         )
@@ -164,13 +173,13 @@ class Store(private val db: SchoolDatabase) {
             subject = header.subject,
             body_text = null,
             body_html = null,
-            sent_at = header.sentAt.toString(),
+            sent_at = header.sentAt.toDb(),
             attachments = json.encodeToString(attachments),
             content_hash = contentHash,
             read_at = null,
-            first_seen_at = firstSeenAt.toString(),
-            updated_at = now.toString(),
-            deleted_at = deletedAt?.toString(),
+            first_seen_at = firstSeenAt.toDb(),
+            updated_at = now.toDb(),
+            deleted_at = deletedAt?.toDb(),
         )
     }
 
@@ -189,20 +198,20 @@ class Store(private val db: SchoolDatabase) {
             subject = message.subject,
             body_text = message.bodyText,
             body_html = message.bodyHtml,
-            sent_at = message.sentAt.toString(),
+            sent_at = message.sentAt.toDb(),
             attachments = json.encodeToString(message.attachments),
             content_hash = contentHash,
             read_at = null,
-            first_seen_at = firstSeenAt.toString(),
-            updated_at = now.toString(),
-            deleted_at = deletedAt?.toString(),
+            first_seen_at = firstSeenAt.toDb(),
+            updated_at = now.toDb(),
+            deleted_at = deletedAt?.toDb(),
         )
     }
 
     fun softDeleteMessage(sourceId: String, now: Instant, childId: String = "default") {
         db.schemaQueries.softDeleteMessage(
-            deleted_at = now.toString(),
-            updated_at = now.toString(),
+            deleted_at = now.toDb(),
+            updated_at = now.toDb(),
             child_id = childId,
             source_id = sourceId,
         )
@@ -227,31 +236,48 @@ class Store(private val db: SchoolDatabase) {
         offset = offset.toLong(),
     ).executeAsList().map { it.toStoredMessage() }
 
+    /** One page of messages, newest first, using keyset pagination on (sentAt, sourceId). */
+    fun listMessagesPage(
+        unreadOnly: Boolean,
+        includeDeleted: Boolean,
+        since: Instant?,
+        after: Pair<Instant, String>?,
+        limit: Int,
+        childId: String?,
+    ): List<StoredMessage> = db.schemaQueries.listMessagesPage(
+        childId = childId,
+        includeDeleted = if (includeDeleted) 1L else 0L,
+        unreadOnly = if (unreadOnly) 1L else 0L,
+        since = since?.toDb(),
+        cursorSentAt = after?.first?.toDb(),
+        cursorSourceId = after?.second.orEmpty(),
+        limit = limit.toLong(),
+    ).executeAsList().map { it.toStoredMessage() }
+
     fun markMessageRead(sourceId: String, now: Instant, childId: String? = null) {
-        db.schemaQueries.markMessageRead(readAt = now.toString(), sourceId = sourceId, childId = childId)
+        db.schemaQueries.markMessageRead(readAt = now.toDb(), sourceId = sourceId, childId = childId)
     }
 
     fun markMessageUnread(sourceId: String, childId: String? = null) {
         db.schemaQueries.markMessageUnread(sourceId = sourceId, childId = childId)
     }
 
-    fun markAllMessagesRead(now: Instant, childId: String? = null): Long {
-        val unread = if (childId == null) {
-            countUnreadMessages()
-        } else {
-            listMessages(unreadOnly = true, includeDeleted = false, limit = 10_000, childId = childId).size.toLong()
-        }
-        db.schemaQueries.markAllMessagesRead(readAt = now.toString(), childId = childId)
-        return unread
-    }
+    /** Marks all unread messages as read and returns how many were changed (atomic, one statement). */
+    fun markAllMessagesRead(now: Instant, childId: String? = null): Long =
+        db.schemaQueries.markAllMessagesRead(readAt = now.toDb(), childId = childId).executeAsList().size.toLong()
 
     fun countActiveMessages(): Long = db.schemaQueries.countActiveMessages().executeAsOne()
 
     fun countUnreadMessages(): Long = db.schemaQueries.countUnreadMessages().executeAsOne()
 
     fun insertSyncRun(startedAt: Instant): Long {
-        db.schemaQueries.insertSyncRun(started_at = startedAt.toString(), status = "running")
+        db.schemaQueries.insertSyncRun(started_at = startedAt.toDb(), status = "running")
         return db.schemaQueries.lastSyncRunId().executeAsOne()
+    }
+
+    /** Closes runs left as "running" by a crash or a hard stop. Call once at startup. */
+    fun failInterruptedSyncRuns(now: Instant) {
+        db.schemaQueries.failInterruptedSyncRuns(finishedAt = now.toDb())
     }
 
     fun finishSyncRun(
@@ -263,7 +289,7 @@ class Store(private val db: SchoolDatabase) {
         changesDetected: Int,
     ) {
         db.schemaQueries.finishSyncRun(
-            finished_at = finishedAt.toString(),
+            finished_at = finishedAt.toDb(),
             status = status.wireName(),
             error_code = errorCode,
             items_fetched = itemsFetched.toLong(),
@@ -291,7 +317,7 @@ class Store(private val db: SchoolDatabase) {
             entity_id = entityId,
             change_type = changeType.wireName(),
             diff = diffJson,
-            detected_at = detectedAt.toString(),
+            detected_at = detectedAt.toDb(),
             sync_run_id = syncRunId,
             child_id = childId,
         )
@@ -315,7 +341,7 @@ class Store(private val db: SchoolDatabase) {
         limit: Int = 100,
         childId: String? = null,
     ): List<StoredChangeEvent> = db.schemaQueries.listChangeEventsSince(
-        since = since.toString(),
+        since = since.toDb(),
         childId = childId,
         entityType = entityType?.wireName(),
         limit = limit.toLong(),
@@ -496,6 +522,15 @@ class Store(private val db: SchoolDatabase) {
         changesDetected = changes_detected.toInt(),
     )
 }
+
+private val dbInstantFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+
+/**
+ * Instants are stored with a fixed millisecond format so that text comparison and ORDER BY in SQL match
+ * time order (`Instant.toString()` drops the fraction when it is zero, and "…00.5Z" < "…00Z" as text).
+ */
+internal fun Instant.toDb(): String = dbInstantFormat.format(toJavaInstant())
 
 private fun GradeKind.wireName(): String = when (this) {
     GradeKind.REGULAR -> "regular"

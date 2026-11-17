@@ -21,13 +21,17 @@ object DatabaseFactory {
         val dbFile = File(dbPath)
         dbFile.parentFile?.mkdirs()
 
+        // The driver opens one connection per thread, so per-connection settings must be passed as
+        // connection properties; a PRAGMA executed once would only reach the first connection.
         val driver = JdbcSqliteDriver(
             url = "jdbc:sqlite:${dbFile.absolutePath}",
-            properties = Properties(),
+            properties = Properties().apply {
+                setProperty("foreign_keys", "true")
+                setProperty("busy_timeout", BUSY_TIMEOUT_MS.toString())
+            },
         )
 
         try {
-            executePragma(driver, "PRAGMA foreign_keys = ON;")
             executePragma(driver, "PRAGMA journal_mode = WAL;")
 
             val currentVersion = readUserVersion(driver)
@@ -80,6 +84,8 @@ object DatabaseFactory {
 
         return driver
     }
+
+    private const val BUSY_TIMEOUT_MS = 5_000
 
     private fun executePragma(driver: SqlDriver, sql: String) {
         driver.execute(null, sql, 0)

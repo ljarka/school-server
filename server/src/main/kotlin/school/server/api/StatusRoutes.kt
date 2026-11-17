@@ -10,7 +10,10 @@ import school.server.store.Store
 import school.server.sync.AuthState
 import school.server.sync.SyncService
 
-fun Route.statusRoutes(store: Store, syncService: SyncService?, version: String = "0.1.0") {
+/** Version from the server jar manifest (set from the release tag), or "dev" for local runs. */
+val appVersion: String = Store::class.java.`package`?.implementationVersion ?: "dev"
+
+fun Route.statusRoutes(store: Store, syncService: SyncService?, version: String = appVersion) {
     get("/status") {
         val syncState = syncService?.state()
         val auth = when (syncState?.authState) {

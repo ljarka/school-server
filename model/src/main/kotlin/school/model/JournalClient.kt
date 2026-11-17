@@ -10,9 +10,20 @@ interface JournalClient {
 
     fun listChildren(): List<ChildAccount> = emptyList()
 
-    fun fetchGrades(childId: String? = null): List<Grade>
+    /**
+     * Returns the child's grades, or `null` when the e-journal denies access to the grades resource for
+     * this account (e.g. a kindergarten child). `null` means "unknown", not "no grades": callers must not
+     * treat it as a complete, empty listing.
+     */
+    fun fetchGrades(childId: String? = null): List<Grade>?
 
-    fun fetchMessageHeaders(childId: String? = null): List<MessageHeader>
+    fun fetchMessageHeaders(childId: String? = null): MessageHeaderListing
 
     fun fetchMessage(sourceId: String, childId: String? = null): Message
 }
+
+/**
+ * Message headers from the inbox. [complete] is `false` when the listing was cut at a safety limit, so
+ * missing items must not be treated as deleted.
+ */
+data class MessageHeaderListing(val headers: List<MessageHeader>, val complete: Boolean = true)

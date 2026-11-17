@@ -32,4 +32,16 @@ data class JournalEndpoints(val portal: String, val api: String, val messages: S
         val base = gateway ?: error("SCHOOL_JOURNAL_GATEWAY_URL is not configured")
         return base.trimEnd('/') + path
     }
+
+    companion object {
+        fun fromDomain(domain: String): JournalEndpoints {
+            val clean = domain.trim().trimEnd('/').removePrefix("https://").removePrefix("http://")
+            return JournalEndpoints(
+                portal = "https://${ProtocolPaths.SUBDOMAIN_PORTAL}.$clean",
+                api = "https://${ProtocolPaths.SUBDOMAIN_API}.$clean${ProtocolPaths.API_VERSION_PATH}",
+                messages = "https://${ProtocolPaths.SUBDOMAIN_MESSAGES}.$clean",
+                gateway = "https://${ProtocolPaths.SUBDOMAIN_GATEWAY}.$clean",
+            )
+        }
+    }
 }

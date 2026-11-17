@@ -12,16 +12,31 @@ object ConfigLoader {
     fun load(env: Map<String, String>, readFile: (String) -> String = { File(it).readText() }): Config {
         val problems = mutableListOf<String>()
 
-        val journalUrl = parseUrl(env, "SCHOOL_JOURNAL_URL", problems)
-        val journalApiUrl = parseUrl(env, "SCHOOL_JOURNAL_API_URL", problems)
-        val journalMessagesUrl = parseUrl(env, "SCHOOL_JOURNAL_MESSAGES_URL", problems)
+        val domain = env["SCHOOL_JOURNAL_DOMAIN"]?.trim()?.trimEnd('/')
+            ?.removePrefix("https://")?.removePrefix("http://")?.ifEmpty { null }
+
+        val journalUrl = parseOptionalUrl(env, "SCHOOL_JOURNAL_URL", problems)
+        val journalApiUrl = parseOptionalUrl(env, "SCHOOL_JOURNAL_API_URL", problems)
+        val journalMessagesUrl = parseOptionalUrl(env, "SCHOOL_JOURNAL_MESSAGES_URL", problems)
         val journalGatewayUrl = parseOptionalUrl(env, "SCHOOL_JOURNAL_GATEWAY_URL", problems)
+        if (domain == null) {
+            if (journalUrl == null && env["SCHOOL_JOURNAL_URL"].isNullOrBlank()) {
+                problems += "SCHOOL_JOURNAL_URL (or SCHOOL_JOURNAL_DOMAIN) is required"
+            }
+            if (journalApiUrl == null && env["SCHOOL_JOURNAL_API_URL"].isNullOrBlank()) {
+                problems += "SCHOOL_JOURNAL_API_URL (or SCHOOL_JOURNAL_DOMAIN) is required"
+            }
+            if (journalMessagesUrl == null && env["SCHOOL_JOURNAL_MESSAGES_URL"].isNullOrBlank()) {
+                problems += "SCHOOL_JOURNAL_MESSAGES_URL (or SCHOOL_JOURNAL_DOMAIN) is required"
+            }
+        }
         val child = env["SCHOOL_CHILD"]?.trim()?.ifEmpty { null }
 
         val login = env["SCHOOL_LOGIN"]?.trim()?.ifEmpty { null }
         if (login == null) {
             problems += "SCHOOL_LOGIN is required"
         } else if (!login.contains("@") &&
+            domain == null &&
             journalGatewayUrl == null &&
             env["SCHOOL_JOURNAL_GATEWAY_URL"].isNullOrBlank()
         ) {
@@ -55,9 +70,10 @@ object ConfigLoader {
         }
 
         return Config(
-            journalUrl = journalUrl!!,
-            journalApiUrl = journalApiUrl!!,
-            journalMessagesUrl = journalMessagesUrl!!,
+            journalDomain = domain,
+            journalUrl = journalUrl.orEmpty(),
+            journalApiUrl = journalApiUrl.orEmpty(),
+            journalMessagesUrl = journalMessagesUrl.orEmpty(),
             journalGatewayUrl = journalGatewayUrl,
             child = child,
             login = login!!,

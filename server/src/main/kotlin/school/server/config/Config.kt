@@ -13,9 +13,10 @@ enum class LogLevel {
 }
 
 data class Config(
-    val journalUrl: String,
-    val journalApiUrl: String,
-    val journalMessagesUrl: String,
+    val journalDomain: String? = null,
+    val journalUrl: String = "",
+    val journalApiUrl: String = "",
+    val journalMessagesUrl: String = "",
     val journalGatewayUrl: String? = null,
     val child: String?,
     val login: String,

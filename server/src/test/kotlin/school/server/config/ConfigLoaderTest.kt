@@ -115,6 +115,17 @@ class ConfigLoaderTest {
     }
 
     @Test
+    fun `SCHOOL_JOURNAL_DOMAIN is accepted without explicit URLs`() {
+        val env = mapOf(
+            "SCHOOL_JOURNAL_DOMAIN" to "https://example.test/",
+            "SCHOOL_LOGIN" to "parent@example.test",
+            "SCHOOL_PASSWORD" to "secret",
+        )
+        val config = ConfigLoader.load(env)
+        assertEquals("example.test", config.journalDomain)
+    }
+
+    @Test
     fun `reports all configuration problems together`() {
         val env = mapOf(
             "SCHOOL_JOURNAL_URL" to "http://bad.example.test",

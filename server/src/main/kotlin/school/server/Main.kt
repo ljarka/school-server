@@ -71,12 +71,13 @@ fun main() {
 
     val store = driver?.let { Store(SchoolDatabase(it)) }
     val syncService = if (store != null) {
+        val baseEndpoints = config.journalDomain?.let { JournalEndpoints.fromDomain(it) }
         val journal = HttpJournalClient(
             endpoints = JournalEndpoints(
-                portal = config.journalUrl,
-                api = config.journalApiUrl,
-                messages = config.journalMessagesUrl,
-                gateway = config.journalGatewayUrl,
+                portal = config.journalUrl.ifEmpty { baseEndpoints!!.portal },
+                api = config.journalApiUrl.ifEmpty { baseEndpoints!!.api },
+                messages = config.journalMessagesUrl.ifEmpty { baseEndpoints!!.messages },
+                gateway = config.journalGatewayUrl ?: baseEndpoints?.gateway,
             ),
             login = config.login,
             passwordProvider = { config.password.reveal() },

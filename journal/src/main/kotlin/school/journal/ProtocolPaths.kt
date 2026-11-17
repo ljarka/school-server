@@ -32,4 +32,10 @@ internal object ProtocolPaths {
     const val GATEWAY_API_PREFIX = "/gateway/api/2.0"
     const val GATEWAY_TOKEN_INFO_PATH = "/gateway/api/2.0/Auth/TokenInfo"
     const val GATEWAY_USER_INFO_PATH = "/gateway/api/2.0/Auth/UserInfo"
+
+    const val SUBDOMAIN_PORTAL = "portal"
+    const val SUBDOMAIN_API = "api"
+    const val SUBDOMAIN_MESSAGES = "wiadomosci"
+    const val SUBDOMAIN_GATEWAY = "synergia"
+    const val API_VERSION_PATH = "/3.0"
 }

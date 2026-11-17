@@ -177,11 +177,12 @@ private fun journalEndpoints(config: Config): JournalEndpoints {
     val derived = config.journalDomain?.let { JournalEndpoints.fromDomain(it) }
     fun pick(explicit: String, fromDomain: String?, name: String): String =
         explicit.ifEmpty { fromDomain ?: error("$name is not configured (checked by ConfigLoader)") }
+    val portalUrl = pick(config.journalUrl, derived?.portal, "SCHOOL_JOURNAL_URL")
     return JournalEndpoints(
-        portal = pick(config.journalUrl, derived?.portal, "SCHOOL_JOURNAL_URL"),
+        portal = portalUrl,
         api = pick(config.journalApiUrl, derived?.api, "SCHOOL_JOURNAL_API_URL"),
         messages = pick(config.journalMessagesUrl, derived?.messages, "SCHOOL_JOURNAL_MESSAGES_URL"),
-        gateway = config.journalGatewayUrl ?: derived?.gateway,
+        gateway = config.journalGatewayUrl ?: derived?.gateway ?: JournalEndpoints.deriveGatewayUrl(portalUrl),
     )
 }
 

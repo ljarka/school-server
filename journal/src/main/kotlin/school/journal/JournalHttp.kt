@@ -12,8 +12,13 @@ internal fun HttpResponseData.isAuthError(): Boolean = code == 401 || code == 40
 /** A 403 that says "this account may not see this resource", as opposed to an expired session. */
 internal fun HttpResponseData.isAccessDenied(): Boolean = code == 403 && body.contains("\"AccessDeny\"")
 
-/** A 403 AccessDeny, 404 NotFound or 405 MethodNotAllowed for an optional e-journal module. */
-internal fun HttpResponseData.isOptionalModuleUnavailable(): Boolean = isAccessDenied() || code == 404 || code == 405
+/** A 401 that says the token lacks scopes for an optional module, rather than an expired session. */
+internal fun HttpResponseData.isInsufficientScopes(): Boolean =
+    code == 401 && body.contains("insufficient scopes", ignoreCase = true)
+
+/** A 401 insufficient scopes, 403 AccessDeny, 404 NotFound or 405 MethodNotAllowed for an optional module. */
+internal fun HttpResponseData.isOptionalModuleUnavailable(): Boolean =
+    isInsufficientScopes() || isAccessDenied() || code == 404 || code == 405
 
 /**
  * Returns the body of a 2xx response. 401/403 call [onAuthError]; anything else throws
@@ -89,6 +94,15 @@ internal interface JournalAuth {
 
     /** GET on the JSON API, re-authenticating and retrying once when the session expired. */
     fun getApi(path: String, childId: String?): HttpResponseData
+
+    /** GET on an optional JSON API resource without triggering a session refresh when it returns 401/403. */
+    fun getOptionalApi(path: String, childId: String?): HttpResponseData = getApi(path, childId)
+
+    /** GET on the gateway API (`/gateway/api/2.0<path>`), activating the child gateway session if needed. */
+    fun getGatewayApi(path: String, childId: String?): HttpResponseData = getOptionalApi(path, childId)
+
+    /** POST JSON on the gateway API (`/gateway/api/2.0<path>`), activating the child gateway session if needed. */
+    fun postGatewayApiJson(path: String, jsonBody: String, childId: String?): HttpResponseData
 
     /** Makes sure the messages service session belongs to [childId]. */
     fun ensureMessagesSession(childId: String?)

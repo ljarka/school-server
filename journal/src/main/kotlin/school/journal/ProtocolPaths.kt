@@ -12,6 +12,7 @@ internal object ProtocolPaths {
     const val PORTAL_FRESH_ACCOUNT_PATH = "/api/v3/SynergiaAccounts/fresh"
 
     const val API_GRADES_PATH = "/Grades"
+    const val API_ME_PATH = "/Me"
     const val API_SUBJECTS_PATH = "/Subjects"
     const val API_CATEGORIES_PATH = "/Grades/Categories"
     const val API_COMMENTS_PATH = "/Grades/Comments"
@@ -27,6 +28,7 @@ internal object ProtocolPaths {
     const val API_POINT_GRADE_CATEGORIES_PATH = "/PointGrades/Categories"
     const val API_POINT_GRADE_COMMENTS_PATH = "/PointGrades/Comments"
     const val API_USERS_PATH = "/Users"
+    const val API_LESSONS_PATH = "/Lessons"
     const val API_SCHOOL_NOTICES_PATH = "/SchoolNotices"
     const val API_AUTO_LOGIN_TOKEN_PATH = "/AutoLoginToken"
     const val AUTO_LOGIN_GATEWAY_PREFIX = "/loguj/token/"
@@ -44,10 +46,15 @@ internal object ProtocolPaths {
     const val GATEWAY_API_PREFIX = "/gateway/api/2.0"
     const val GATEWAY_TOKEN_INFO_PATH = "/gateway/api/2.0/Auth/TokenInfo"
     const val GATEWAY_USER_INFO_PATH = "/gateway/api/2.0/Auth/UserInfo"
+    const val API_TOKEN_INFO_PATH = "/Auth/TokenInfo"
+    const val API_USER_INFO_PREFIX = "/Auth/UserInfo"
+    const val API_AUTH_SUBJECTS_PATH = "/Auth/Subjects"
+    const val API_PARTIAL_GRADES_PREFIX = "/Auth/DescriptiveGradingSystem/PartialGrades/Student"
 
     const val SUBDOMAIN_PORTAL = "portal"
     const val SUBDOMAIN_API = "api"
     const val SUBDOMAIN_MESSAGES = "wiadomosci"
     const val SUBDOMAIN_GATEWAY = "synergia"
     const val API_VERSION_PATH = "/3.0"
+    const val API_V2_VERSION_PATH = "/2.0"
 }

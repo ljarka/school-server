@@ -1,5 +1,6 @@
 package school.journal
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -23,4 +24,29 @@ internal data class PortalAccountsResponseDto(
 )
 
 @Serializable
-internal data class GatewayTokenInfoDto(val UserIdentifier: String = "")
+internal data class GatewayTokenInfoDto(
+    @SerialName("UserIdentifier") val UserIdentifier: String = "",
+    @SerialName("userIdentifier") val camelUserIdentifier: String = "",
+    @SerialName("Identifier") val upperIdentifier: String = "",
+    @SerialName("identifier") val lowerIdentifier: String = "",
+) {
+    fun resolvedUserIdentifier(): String? =
+        listOf(UserIdentifier, camelUserIdentifier, upperIdentifier, lowerIdentifier)
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() }
+}
+
+@Serializable
+internal data class ApiMeAccountDto(
+    @SerialName("Id") val id: Long? = null,
+    @SerialName("UserId") val userId: Long? = null,
+)
+
+@Serializable
+internal data class ApiMePayloadDto(
+    @SerialName("Account") val account: ApiMeAccountDto? = null,
+    @SerialName("User") val user: ApiMeAccountDto? = null,
+)
+
+@Serializable
+internal data class ApiMeResponseDto(@SerialName("Me") val me: ApiMePayloadDto? = null)

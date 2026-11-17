@@ -1,7 +1,9 @@
 package school.journal
 
 import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.slf4j.LoggerFactory
 import school.model.AuthRejected
 import school.model.ChildAccount
@@ -84,12 +86,23 @@ internal class GatewayAuth(
     override fun getApi(path: String, childId: String?): HttpResponseData {
         val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
         val first = session.get(url = url, headers = jsonHeaders())
-        if (first.isAccessDenied() || !first.isAuthError()) {
+        if (first.isOptionalModuleUnavailable() || !first.isAuthError()) {
             return first
         }
         logger.debug("e-journal gateway returned {}, re-authenticating", first.code)
         login()
         return session.get(url = url, headers = jsonHeaders())
+    }
+
+    override fun getOptionalApi(path: String, childId: String?): HttpResponseData {
+        val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
+        return session.get(url = url, headers = jsonHeaders())
+    }
+
+    override fun postGatewayApiJson(path: String, jsonBody: String, childId: String?): HttpResponseData {
+        val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
+        val body = jsonBody.toRequestBody(JSON_MEDIA_TYPE)
+        return session.postForm(url = url, body = body, headers = jsonHeaders())
     }
 
     override fun ensureMessagesSession(childId: String?) {
@@ -125,5 +138,6 @@ internal class GatewayAuth(
 
     private companion object {
         val REJECTED_CODES = setOf(400, 401, 403, 422)
+        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }

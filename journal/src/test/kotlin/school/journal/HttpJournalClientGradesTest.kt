@@ -48,7 +48,7 @@ class HttpJournalClientGradesTest {
         ).apply { login() }
     }
 
-    private fun enqueueEmptyExtraGrades(count: Int = 5) {
+    private fun enqueueEmptyExtraGrades(count: Int = 7) {
         repeat(count) { server.enqueue(MockResponse(code = 404, body = "")) }
     }
 
@@ -215,6 +215,10 @@ class HttpJournalClientGradesTest {
                     """"Grade":"18","GradeValue":18.0,"Date":"2026-11-15","Semester":1}]}""",
             ),
         )
+        // /Auth/TokenInfo (404)
+        server.enqueue(MockResponse(code = 404, body = ""))
+        // /Me (404)
+        server.enqueue(MockResponse(code = 404, body = ""))
         // /Subjects
         server.enqueue(MockResponse(code = 200, body = gradeFixture("subjects.json")))
         // /Users
@@ -268,5 +272,86 @@ class HttpJournalClientGradesTest {
         assertEquals("18/20", pg.value)
         assertEquals("Kartkówka", pg.category)
         assertEquals(2, pg.weight)
+    }
+
+    @Test
+    fun `fetchGrades maps partial descriptive grading system grades via student LID`() {
+        val journal = loggedInClient()
+        // /Grades denied + 5 optional modules 404
+        server.enqueue(
+            MockResponse(
+                code = 403,
+                body = """{"Status":"Error","Code":"AccessDeny","Message":"No access"}""",
+            ),
+        )
+        repeat(5) { server.enqueue(MockResponse(code = 404, body = "")) }
+        // /Auth/TokenInfo
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"UserIdentifier":"LID-AUTH-USER-100-PARENT1"}""",
+            ),
+        )
+        // /Auth/UserInfo/LID-AUTH-USER-100-PARENT1
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"UserInfo":{"IdentifierOfStudentAssignedWithUser":"LID-AUTH-USER-100-STUDENT1"}}""",
+            ),
+        )
+        // POST /Auth/DescriptiveGradingSystem/PartialGrades/Student/LID-AUTH-USER-100-STUDENT1
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body =
+                """{"data":[{"gradeId":"LID-DGS-PARTIALGRADE-100-ABC",""" +
+                    """"subjectId":"LID-SORGANIZATION-SUBJECT-100-POL",""" +
+                    """"teacherId":"LID-AUTH-USER-100-TEACHER1",""" +
+                    """"area":{"id":"LID-DGS-AREA-1","name":"Komunikacja - mówienie i słuchanie"},""" +
+                    """"scaleValue":{"id":"LID-DGS-SCALE-1","value":"6"},""" +
+                    """"content":"Ocena opisowa częściowa.",""" +
+                    """"comments":"Zadanie sprawdzające wiedzę",""" +
+                    """"implementedRequirements":[{"id":"REQ-1","name":"czytanie ze zrozumieniem"}],""" +
+                    """"date":"2026-09-14","semester":1}]}""",
+            ),
+        )
+        // /Subjects
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body = """{"Subjects":[{"Id":15,"Name":"Edukacja polonistyczna"}]}""",
+            ),
+        )
+        // /Users
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body =
+                """{"Users":[{"Id":33,"AccountId":"LID-AUTH-USER-100-TEACHER1",""" +
+                    """"FirstName":"Jan","LastName":"Kowalski"}]}""",
+            ),
+        )
+        // /Auth/Subjects
+        server.enqueue(
+            MockResponse(
+                code = 200,
+                body =
+                """{"data":[{"identifier":"LID-SORGANIZATION-SUBJECT-100-POL","numericIdentifier":15}]}""",
+            ),
+        )
+
+        val grades = journal.fetchGrades()!!
+        assertEquals(1, grades.size)
+        val g = grades.single()
+        assertEquals("dgs_LID-DGS-PARTIALGRADE-100-ABC", g.sourceId)
+        assertEquals("Edukacja polonistyczna", g.subject)
+        assertEquals("6", g.value)
+        assertEquals(6.0, g.numericValue)
+        assertEquals("Komunikacja - mówienie i słuchanie", g.category)
+        assertEquals("Jan Kowalski", g.teacher)
+        assertEquals(
+            "Ocena opisowa częściowa.\nZadanie sprawdzające wiedzę\nczytanie ze zrozumieniem",
+            g.comment,
+        )
     }
 }

@@ -1,6 +1,10 @@
 package school.journal
 
 import kotlinx.datetime.LocalDate
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.slf4j.LoggerFactory
 import school.model.Grade
 import school.model.GradeKind
@@ -59,17 +63,22 @@ internal object GradesMapper {
     fun mapDescriptive(
         grades: List<DescriptiveGradeDto>,
         subjects: Map<Long, SubjectDto>,
+        lessons: Map<Long, LessonDto> = emptyMap(),
         skills: Map<Long, DescriptiveSkillDto>,
         commentsById: Map<Long, String>,
         commentsByGradeId: Map<Long, String>,
         users: Map<Long, UserDto>,
     ): List<Grade> = grades.map { dto ->
         val skill = dto.skill?.let { skills[it.id] }
-        val subjectId = dto.subject?.id ?: skill?.subject?.id
+        val lessonSubjectId = dto.lesson?.let { lessons[it.id]?.subject?.id }
+        val subjectId = dto.subject?.id ?: skill?.subject?.id ?: lessonSubjectId
         val subjectName = subjectId?.let { subjects[it]?.name } ?: "?"
-        val rawValue = (dto.map ?: dto.realGradeValue ?: dto.grade).orEmpty().trim()
+        val rawValue = dto.resolvedValue()
         val (value, extraComment) = shortenValue(rawValue)
-        val inlineComments = dto.comments.mapNotNull { commentsById[it.id]?.trim()?.takeIf(String::isNotEmpty) }
+        val inlineComments = (
+            dto.inlineCommentTexts() +
+                dto.commentIds().mapNotNull { commentsById[it]?.trim()?.takeIf(String::isNotEmpty) }
+            ).distinct()
         val combinedComment = (
             listOfNotNull(extraComment) +
                 inlineComments +
@@ -154,7 +163,10 @@ internal object GradesMapper {
         } else {
             pointsText.ifEmpty { "—" }
         }
-        val inlineComments = dto.comments.mapNotNull { commentsById[it.id]?.trim()?.takeIf(String::isNotEmpty) }
+        val inlineComments = (
+            dto.inlineCommentTexts() +
+                dto.commentIds().mapNotNull { commentsById[it]?.trim()?.takeIf(String::isNotEmpty) }
+            ).distinct()
         val combinedComment = (
             inlineComments +
                 listOfNotNull(commentsByGradeId[dto.id]?.takeIf { it !in inlineComments })
@@ -176,6 +188,62 @@ internal object GradesMapper {
         )
     }
 
+    fun mapPartial(
+        grades: List<PartialGradeDto>,
+        subjects: Map<Long, SubjectDto>,
+        authSubjectsByLid: Map<String, AuthSubjectDto>,
+        users: Map<Long, UserDto>,
+        usersByAccountId: Map<String, UserDto>,
+    ): List<Grade> = grades.filter { it.gradeId.isNotBlank() }.map { dto ->
+        val authSub = authSubjectsByLid[dto.subjectId]
+        val numericSubId = authSub?.numericIdentifier ?: dto.subjectId.toLongOrNull()
+        val subjectName = numericSubId?.let { subjects[it]?.name }
+            ?: authSub?.name?.takeIf { it.isNotBlank() }
+            ?: "?"
+        val rawValue = dto.scaleValue?.value.orEmpty().trim()
+        val (value, extraComment) = shortenValue(rawValue)
+        val requirementsText = dto.implementedRequirements
+            .mapNotNull { it.name.trim().takeIf(String::isNotEmpty) }
+            .joinToString(", ")
+            .takeIf { it.isNotEmpty() }
+        val commentParts = buildList {
+            extraComment?.let(::add)
+            dto.content?.trim()?.takeIf { it.isNotEmpty() }?.let(::add)
+            extractCommentsText(dto.comments).forEach { if (it !in this) add(it) }
+            requirementsText?.let { if (it !in this) add(it) }
+        }
+        val teacherIdentifier = dto.teacherId?.ifBlank { null } ?: dto.addedBy?.ifBlank { null }
+        val teacher = teacherIdentifier?.let { tid ->
+            val user = usersByAccountId[tid] ?: tid.toLongOrNull()?.let { users[it] }
+            user?.let(::formatUserName)
+        } ?: "?"
+
+        Grade(
+            sourceId = "dgs_${dto.gradeId}",
+            subject = subjectName,
+            value = value.ifEmpty { "—" },
+            numericValue = parseNumericGrade(value),
+            weight = null,
+            category = dto.area?.name?.trim()?.takeIf { it.isNotEmpty() } ?: "Ocena opisowa",
+            semester = dto.semester,
+            kind = GradeKind.REGULAR,
+            countsToAverage = false,
+            teacher = teacher,
+            comment = commentParts.joinToString("\n").ifEmpty { null },
+            issuedOn = parseIssuedOn(dto.date),
+        )
+    }
+
+    private fun extractCommentsText(element: JsonElement?): List<String> = when (element) {
+        null -> emptyList()
+        is JsonPrimitive -> listOfNotNull(element.content.trim().takeIf { it.isNotEmpty() && element.isString })
+        is JsonObject -> {
+            val text = (element["content"] ?: element["text"]) as? JsonPrimitive
+            listOfNotNull(text?.content?.trim()?.takeIf { it.isNotEmpty() && text.isString })
+        }
+        is JsonArray -> element.flatMap(::extractCommentsText)
+    }
+
     private fun shortenValue(raw: String): Pair<String, String?> {
         if (raw.length <= MAX_CHIP_VALUE_LENGTH) return raw to null
         return (raw.take(MAX_CHIP_VALUE_LENGTH - 1).trimEnd() + "…") to raw
@@ -184,12 +252,13 @@ internal object GradesMapper {
     private fun formatPoints(value: Double): String =
         if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
 
-    private fun resolveTeacher(id: Long?, users: Map<Long, UserDto>): String = id?.let { users[it] }?.let { user ->
-        listOfNotNull(user.firstName?.trim(), user.lastName?.trim())
-            .filter { it.isNotEmpty() }
-            .joinToString(" ")
-            .ifEmpty { "?" }
-    } ?: "?"
+    private fun resolveTeacher(id: Long?, users: Map<Long, UserDto>): String =
+        id?.let { users[it] }?.let(::formatUserName) ?: "?"
+
+    private fun formatUserName(user: UserDto): String = listOfNotNull(user.firstName?.trim(), user.lastName?.trim())
+        .filter { it.isNotEmpty() }
+        .joinToString(" ")
+        .ifEmpty { "?" }
 
     private fun parseIssuedOn(raw: String): LocalDate = try {
         LocalDate.parse(raw.trim().take(10))

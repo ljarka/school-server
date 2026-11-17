@@ -5,6 +5,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import school.model.AuthRejected
@@ -24,10 +26,14 @@ internal class PortalAuth(
     private val tokenProvider = TokenProvider()
 
     @Volatile
+    private var activeGatewayChildId: String? = null
+
+    @Volatile
     private var activeMessagesChildId: String? = null
 
     override fun login() {
         tokenProvider.setAccounts(performLogin())
+        activeGatewayChildId = null
         activeMessagesChildId = null
     }
 
@@ -42,11 +48,56 @@ internal class PortalAuth(
     override fun getApi(path: String, childId: String?): HttpResponseData {
         val token = tokenProvider.currentToken(childId) ?: throw JournalUnavailable("not_authenticated")
         val first = getWithBearer(path, token)
-        if (first.code != 401) {
+        if (first.code != 401 || first.isInsufficientScopes()) {
             return first
         }
         logger.debug("e-journal API returned 401, refreshing token")
         return getWithBearer(path, refreshToken(childId))
+    }
+
+    override fun getOptionalApi(path: String, childId: String?): HttpResponseData {
+        val token = tokenProvider.currentToken(childId) ?: throw JournalUnavailable("not_authenticated")
+        return getWithBearer(path, token)
+    }
+
+    override fun getGatewayApi(path: String, childId: String?): HttpResponseData {
+        val token = tokenProvider.currentToken(childId) ?: throw JournalUnavailable("not_authenticated")
+        val v2Res = session.get(
+            url = endpoints.apiV2Url(path),
+            headers = mapOf("Accept" to "application/json", "Authorization" to "Bearer $token"),
+        )
+        if (v2Res.code in 200..299 || v2Res.isOptionalModuleUnavailable()) {
+            return v2Res
+        }
+        val v3Res = getWithBearer(path, token)
+        if (v3Res.code in 200..299 || v3Res.isOptionalModuleUnavailable() || endpoints.gateway == null) {
+            return v3Res
+        }
+        ensureGatewaySession(childId)
+        val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
+        return session.get(url = url, headers = gatewayJsonHeaders())
+    }
+
+    override fun postGatewayApiJson(path: String, jsonBody: String, childId: String?): HttpResponseData {
+        val body = jsonBody.toRequestBody(JSON_MEDIA_TYPE)
+        if (endpoints.gateway != null) {
+            ensureGatewaySession(childId)
+            val url = endpoints.gatewayUrl("${ProtocolPaths.GATEWAY_API_PREFIX}$path")
+            val gatewayRes = session.postForm(url = url, body = body, headers = gatewayJsonHeaders())
+            if (gatewayRes.code in 200..299 || gatewayRes.isOptionalModuleUnavailable()) {
+                return gatewayRes
+            }
+        }
+        val token = tokenProvider.currentToken(childId) ?: throw JournalUnavailable("not_authenticated")
+        val v2Res = session.postForm(
+            url = endpoints.apiV2Url(path),
+            body = body,
+            headers = mapOf("Accept" to "application/json", "Authorization" to "Bearer $token"),
+        )
+        if (v2Res.code in 200..299 || v2Res.isOptionalModuleUnavailable()) {
+            return v2Res
+        }
+        return postWithBearer(path, body, token)
     }
 
     override fun ensureMessagesSession(childId: String?) {
@@ -58,6 +109,7 @@ internal class PortalAuth(
 
     override fun renewMessagesSession(childId: String?) {
         refreshToken(childId)
+        activeGatewayChildId = null
         activateMessages(childId)
     }
 
@@ -65,6 +117,13 @@ internal class PortalAuth(
         url = endpoints.apiUrl(path),
         headers = mapOf("Accept" to "application/json", "Authorization" to "Bearer $token"),
     )
+
+    private fun postWithBearer(path: String, body: okhttp3.RequestBody, token: String): HttpResponseData =
+        session.postForm(
+            url = endpoints.apiUrl(path),
+            body = body,
+            headers = mapOf("Accept" to "application/json", "Authorization" to "Bearer $token"),
+        )
 
     private fun refreshToken(childId: String?): String = tokenProvider.refresh(
         childId = childId,
@@ -135,7 +194,14 @@ internal class PortalAuth(
         Jsoup.parse(html).selectFirst("input[name=_token]")?.attr("value")?.trim()?.ifEmpty { null }
             ?: throw JournalUnavailable("layout_changed:login")
 
-    private fun activateMessages(childId: String?) {
+    private fun ensureGatewaySession(childId: String?) {
+        val target = tokenProvider.currentAccount(childId)?.id?.toString()
+        if (activeGatewayChildId == null || activeGatewayChildId != target) {
+            activateGatewaySession(childId)
+        }
+    }
+
+    private fun activateGatewaySession(childId: String?) {
         val token = tokenProvider.currentToken(childId) ?: refreshToken(childId)
         val autoLoginRes = postAutoLoginToken(token).let { res ->
             if (res.code == 401) postAutoLoginToken(refreshToken(childId)) else res
@@ -158,9 +224,16 @@ internal class PortalAuth(
             headers = mapOf("User-Agent" to ProtocolPaths.MOBILE_USER_AGENT),
         ).requireRenewedSession()
 
-        session.activateMessagesService(endpoints)
-        activeMessagesChildId = tokenProvider.currentAccount(childId)?.id?.toString()
+        activeGatewayChildId = tokenProvider.currentAccount(childId)?.id?.toString()
     }
+
+    private fun activateMessages(childId: String?) {
+        ensureGatewaySession(childId)
+        session.activateMessagesService(endpoints)
+        activeMessagesChildId = activeGatewayChildId
+    }
+
+    private fun gatewayJsonHeaders() = mapOf("Accept" to "application/json", "User-Agent" to BROWSER_USER_AGENT)
 
     private fun postAutoLoginToken(accessToken: String): HttpResponseData = session.postForm(
         url = endpoints.apiUrl(ProtocolPaths.API_AUTO_LOGIN_TOKEN_PATH),
@@ -176,4 +249,8 @@ internal class PortalAuth(
 
     @Serializable
     private data class AutoLoginTokenDto(@SerialName("Token") val token: String = "")
+
+    private companion object {
+        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+    }
 }

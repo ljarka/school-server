@@ -80,13 +80,19 @@ private fun parseKindParam(raw: String?): GradeKind? {
 }
 
 internal fun computeWeightedAverage(grades: List<StoredGrade>): Double? {
+    val regularNumeric = grades.filter {
+        it.grade.numericValue != null && it.grade.kind == GradeKind.REGULAR
+    }
+    val counted = grades.filter { it.grade.numericValue != null && it.grade.countsToAverage }
+    val target = counted.ifEmpty { regularNumeric }
+    if (target.isEmpty()) return null
+
     var weightedSum = 0.0
     var weightTotal = 0.0
 
-    for (stored in grades) {
+    for (stored in target) {
         val g = stored.grade
         val num = g.numericValue ?: continue
-        if (!g.countsToAverage) continue
         val w = (g.weight ?: 1).toDouble()
         if (w <= 0.0) continue
         weightedSum += num * w

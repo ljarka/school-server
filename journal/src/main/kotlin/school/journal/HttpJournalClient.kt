@@ -251,6 +251,9 @@ class HttpJournalClient(
     }
 
     private fun handleApiResponse(response: HttpResponseData, path: String): String {
+        if (response.code == 403 && response.body.contains("\"AccessDeny\"")) {
+            throw GatewayAccessDeniedException()
+        }
         if (response.code == 401 || response.code == 403) {
             throw JournalUnavailable("auth_refresh_failed")
         }

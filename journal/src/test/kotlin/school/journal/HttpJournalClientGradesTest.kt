@@ -149,4 +149,18 @@ class HttpJournalClientGradesTest {
         assertEquals(6, grades.size)
         assertEquals("?", grades.first().teacher)
     }
+
+    @Test
+    fun `fetchGrades returns empty list when portal API returns AccessDeny`() {
+        val journal = loggedInClient()
+        server.enqueue(
+            MockResponse(
+                code = 403,
+                body =
+                """{"Status":"Error","Code":"AccessDeny",""" +
+                    """"Message":"Account not have access to Grades resource"}""",
+            ),
+        )
+        assertEquals(emptyList(), journal.fetchGrades())
+    }
 }

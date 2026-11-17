@@ -97,7 +97,7 @@ Update the Status column when a module lands.
 
 - Kotlin 2.x, JDK 21, Gradle Kotlin DSL, versions only in `gradle/libs.versions.toml`.
 - ktlint (Picfort's `.editorconfig`); `./gradlew ktlintFormat` fixes most issues.
-- No DI framework; constructor injection, wired in `Main.kt`. Pass `Clock` (kotlinx-datetime)
+- No DI framework; constructor injection, wired in `Main.kt`. Pass `Clock` (`kotlin.time.Clock`; `Instant` is `kotlin.time.Instant`, dates from kotlinx-datetime)
   everywhere time matters.
 - Errors as types: `sealed interface SyncResult`, exceptions only at the `JournalClient` edge.
 - Times: stored and returned as ISO 8601 UTC (`2026-11-16T14:05:00Z`); e-journal dates parsed

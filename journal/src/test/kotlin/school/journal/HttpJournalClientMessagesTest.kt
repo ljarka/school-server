@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.jupiter.api.AfterEach

@@ -1,9 +1,9 @@
 package school.server.auth
 
+import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 /**
  * Sliding-window rate limiter for wrong API key attempts per client address.

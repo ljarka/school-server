@@ -23,7 +23,7 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import java.net.BindException
 import kotlin.system.exitProcess
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import school.journal.HttpJournalClient

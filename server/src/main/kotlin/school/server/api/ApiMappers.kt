@@ -1,7 +1,7 @@
 package school.server.api
 
 import io.ktor.http.HttpStatusCode
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import school.model.GradeDto
 import school.model.MessageDetailDto
 import school.model.MessageSummaryDto

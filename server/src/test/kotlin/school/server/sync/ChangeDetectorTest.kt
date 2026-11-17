@@ -3,7 +3,7 @@ package school.server.sync
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import school.model.Attachment
 import school.model.Grade

@@ -2,9 +2,9 @@ package school.server.store
 
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
+import kotlin.time.toJavaInstant
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.toJavaInstant
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import school.model.Attachment

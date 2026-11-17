@@ -1,6 +1,6 @@
 package school.server.sync
 
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.serialization.json.JsonPrimitive
 import school.model.Grade
 import school.model.Message

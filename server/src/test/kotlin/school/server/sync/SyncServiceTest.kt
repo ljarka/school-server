@@ -7,14 +7,15 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import org.junit.jupiter.api.io.TempDir
 import school.model.AuthRejected
@@ -32,6 +33,7 @@ import school.server.store.DatabaseFactory
 import school.server.store.Store
 import school.server.store.db.SchoolDatabase
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SyncServiceTest {
     @TempDir
     lateinit var tempDir: File

@@ -12,7 +12,7 @@ Generate a client from it (any language) or use the Kotlin DTOs from the `:model
 | Auth | header `X-School-Key: <SCHOOL_API_KEY>` on every `/api/v1/*` call |
 | Format | JSON, UTF-8, camelCase fields |
 | Times | ISO 8601 UTC (`2026-11-16T14:05:00Z`); `issuedOn` is a plain date |
-| Ids | strings: grades `g_…`, messages `m_…` |
+| Ids | strings: grades `g_…`, messages `m_…`, announcements `a_…` |
 | Caching | none (`Cache-Control: no-store`) |
 
 ```sh
@@ -31,6 +31,16 @@ curl -H "X-School-Key: $KEY" https://school.example.com/api/v1/status
    `GET /api/v1/changes?after=<cursor>&limit=100`; process `items`; save `nextCursor`;
    repeat while `hasMore` is `true`.
 5. **Open a message**: `GET /api/v1/messages/{id}`, then `PUT /api/v1/messages/{id}/read`.
+
+### Messages and announcements
+
+`/api/v1/messages` returns inbox messages **and** the school's notice-board announcements in one
+list, newest first ([ADR 0015](../adrs/0015-announcements-in-messages.md)). Each item has
+`type`: `message` or `announcement` (treat unknown values like `message`). Pass `type=message` or
+`type=announcement` to `/messages` or `/messages/read-all` to get or mark only one kind.
+Announcements have `a_…` ids, `hasAttachments: false`, `sender` = author (`""` if unknown) and
+`validFrom` / `validTo` dates (when the school shows them on the board); messages have both `null`.
+Read state, `/messages/{id}` and the change feed (`entityType: message`) work the same for both.
 6. **Health badge**: if `/api/v1/status` has `auth: "auth_failed"` or `lastSuccessfulSyncAt`
    older than an hour, show "school data not up to date".
 
@@ -90,5 +100,5 @@ val page: ChangePage = client.get("api/v1/changes") { parameter("after", cursor)
 
 ## 7. Planned (not in v1)
 
-Sending messages, announcements, attendance, homework, calendar, timetable, push notifications
+Sending messages, attendance, homework, calendar, timetable, push notifications
 (webhook/SSE). They will be added under `/api/v1` as new endpoints without breaking existing ones.

@@ -52,6 +52,9 @@ data class MessageSummaryDto(
     val read: Boolean,
     val readAt: Instant?,
     val deletedAt: Instant?,
+    val type: MessageType = MessageType.MESSAGE,
+    val validFrom: LocalDate? = null,
+    val validTo: LocalDate? = null,
 )
 
 @Serializable
@@ -68,6 +71,9 @@ data class MessageDetailDto(
     val read: Boolean,
     val readAt: Instant?,
     val deletedAt: Instant?,
+    val type: MessageType = MessageType.MESSAGE,
+    val validFrom: LocalDate? = null,
+    val validTo: LocalDate? = null,
     val bodyText: String,
     val bodyHtml: String,
     val attachments: List<Attachment>,

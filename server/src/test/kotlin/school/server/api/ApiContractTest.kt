@@ -31,6 +31,7 @@ import school.model.MarkAllReadResponseDto
 import school.model.Message
 import school.model.MessageDetailDto
 import school.model.MessageHeaderListing
+import school.model.MessageType
 import school.model.MessagesPageDto
 import school.model.StatusDto
 import school.model.SubjectsListDto
@@ -270,6 +271,72 @@ class ApiContractTest {
             header("X-School-Key", "test-key")
         }
         assertEquals(HttpStatusCode.NotFound, notFoundRes.status)
+    }
+
+    @Test
+    fun `announcements are listed with messages, marked by type, and filterable`() = testApplication {
+        val dbPath = File(tempDir, "ann.db").absolutePath
+        val store = openStore("ann.db").also { seedStore(it) }
+        val runId = store.insertSyncRun(t0)
+        val announcement = Message(
+            sourceId = "a_7",
+            sender = "Dyrekcja",
+            subject = "Zbiórka makulatury",
+            sentAt = Instant.parse("2026-11-16T10:00:00Z"),
+            bodyText = "W piątek",
+            bodyHtml = "W piątek",
+            attachments = emptyList(),
+            type = MessageType.ANNOUNCEMENT,
+            validFrom = LocalDate.parse("2026-11-16"),
+            validTo = LocalDate.parse("2026-11-27"),
+        )
+        store.applyChanges(
+            syncRunId = runId,
+            gradeChanges = school.server.sync.Changes(),
+            messageChanges = ChangeDetector().diffMessages(emptyList(), listOf(announcement), complete = true),
+            now = t0,
+        )
+        store.finishSyncRun(runId, t0, SyncRunStatus.OK, null, 1, 1)
+        application { schoolModule(testConfig(dbPath), clock = FakeClock(t0), store = store) }
+
+        val allRes = client.get("/api/v1/messages") { header("X-School-Key", "test-key") }
+        val all = json.decodeFromString<MessagesPageDto>(allRes.bodyAsText())
+        assertEquals(listOf("m_3", "a_7", "m_2", "m_1"), all.items.map { it.id })
+        assertEquals(MessageType.ANNOUNCEMENT, all.items[1].type)
+        assertEquals(MessageType.MESSAGE, all.items[0].type)
+        val raw = allRes.bodyAsText()
+        assertTrue(raw.contains("\"type\":\"announcement\""))
+        assertTrue(raw.contains("\"type\":\"message\""))
+        assertTrue(raw.contains("\"validFrom\":\"2026-11-16\""))
+        assertTrue(raw.contains("\"validTo\":null"), "messages carry null validity")
+
+        val onlyAnn = client.get("/api/v1/messages?type=announcement") { header("X-School-Key", "test-key") }
+        assertEquals(listOf("a_7"), json.decodeFromString<MessagesPageDto>(onlyAnn.bodyAsText()).items.map { it.id })
+        val onlyMsg = client.get("/api/v1/messages?type=message") { header("X-School-Key", "test-key") }
+        assertEquals(3, json.decodeFromString<MessagesPageDto>(onlyMsg.bodyAsText()).items.size)
+
+        val badType = client.get("/api/v1/messages?type=notice") { header("X-School-Key", "test-key") }
+        assertEquals(HttpStatusCode.BadRequest, badType.status)
+        assertTrue(badType.bodyAsText().contains("BAD_REQUEST"))
+
+        val detail = client.get("/api/v1/messages/a_7") { header("X-School-Key", "test-key") }
+        val detailDto = json.decodeFromString<MessageDetailDto>(detail.bodyAsText())
+        assertEquals(MessageType.ANNOUNCEMENT, detailDto.type)
+        assertEquals(LocalDate.parse("2026-11-27"), detailDto.validTo)
+        assertEquals("W piątek", detailDto.bodyText)
+
+        val read = client.put("/api/v1/messages/a_7/read") { header("X-School-Key", "test-key") }
+        assertTrue(json.decodeFromString<MessageDetailDto>(read.bodyAsText()).read)
+        client.delete("/api/v1/messages/a_7/read") { header("X-School-Key", "test-key") }
+
+        val readAnn = client.post("/api/v1/messages/read-all?type=announcement") { header("X-School-Key", "test-key") }
+        assertEquals(1L, json.decodeFromString<MarkAllReadResponseDto>(readAnn.bodyAsText()).marked)
+        assertNull(store.getMessage("m_1")!!.readAt)
+
+        val changes = client.get("/api/v1/changes?type=message") { header("X-School-Key", "test-key") }
+        val annEvent = json.decodeFromString<ChangePageDto>(changes.bodyAsText()).items.single { it.entityId == "a_7" }
+        assertEquals(EntityType.MESSAGE, annEvent.entityType)
+        assertTrue(annEvent.entity.toString().contains("\"type\":\"announcement\""))
     }
 
     @Test

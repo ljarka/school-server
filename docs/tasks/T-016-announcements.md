@@ -1,6 +1,6 @@
 # T-016 — Announcements (school notice board) in the message list
 
-**Status:** ready
+**Status:** done
 **Depends on:** T-014, T-015
 **ADRs:** 0015, 0002, 0003, 0006, 0007, 0010, 0011, 0013, 0014
 
@@ -45,8 +45,8 @@ never "no announcements" (ADR 0014).
   lookup already used for grades. Unexpected shape →
   `JournalUnavailable("layout_changed:announcements")`.
 - `:server` `store/`: add `type` (`message` | `announcement`, default `message`) and nullable
-  `valid_from` / `valid_to` to the message table. New `.sqm` migration + schema snapshot +
-  migration test (rule 7); existing rows become `type = message`.
+  `valid_from` / `valid_to` to the message table in the base v1 schema + updated `1.db` snapshot
+  (no migration, see Decisions).
 - `:server` `sync/`: fetch announcements in the same cycle as grades/messages and map them to
   message rows (ADR 0015 field mapping). Diff each type separately: the announcements diff never
   touches `m_` rows and the inbox diff never touches `a_` rows. `null` → skip the announcements diff
@@ -72,7 +72,7 @@ from the reference SDK's schema): `notices.json`, `notices_empty.json`, `notices
   author → `sender: ""`, missing creation time → start date.
 - Sanitising removes scripts, event handlers, styles.
 - MockWebServer: only GET requests reached the API.
-- Store: migration test from the previous schema (old rows get `type = message`).
+- Store: type round-trip, `type` filter in lists and mark-all-read.
 - Sync: new / edited / removed announcement → `created` / `updated` / `deleted` with
   `entityType: message`; announcements `null` → no events and inbox diff unaffected; inbox cut
   (`complete = false`) → announcements still fully diffed.
@@ -91,6 +91,25 @@ from the reference SDK's schema): `notices.json`, `notices_empty.json`, `notices
 
 - Announcements are merged into the message endpoints with a `type` field — owner, 2026-11-17,
   see ADR 0015 (the first draft had separate `/announcements` endpoints).
+- **No migration** — owner, 2026-11-17: nobody runs the server yet, so the columns go straight into
+  the base v1 schema (`Schema.sq`, `1.db`), like T-014. Once there are installs, rule 7 applies again.
+- **No separate `Announcement` domain type** — `fetchAnnouncements` returns `List<Message>` with
+  `type = ANNOUNCEMENT` and `validFrom`/`validTo`; the store, detector and API already handle `Message`.
+  Alternative: own type + mapping in sync (more code, same result).
+- **Field names** — the reference SDK's schema only guarantees `Id`, `StartDate`, `EndDate`, `AddedBy`;
+  `Subject`, `Content`, `CreationDate` are taken from other reference clients. Missing text fields map to
+  `""` (no false `layout_changed`); a missing `Id`, or no usable date at all, is `layout_changed:announcements`.
+  Verify in the live run (T-013).
+- **Content** — HTML if it contains a tag, otherwise plain text: escaped, line breaks → `<br>`, then the
+  same sanitising as message bodies. The provider's read flag is ignored (ADR 0007).
+- **`fetchAnnouncements` default** returns `null` in `JournalClient`, so other clients/fakes keep working
+  and simply never touch stored announcements.
+- **Hash** — `validFrom`/`validTo` are hashed only when present, so inbox message hashes are unchanged.
+- **Users lookup** is fetched only when a notice has an author; access denied → authors `""`.
+- **Board failure** fails the run like a grades/messages failure (backoff), but inbox and grades changes
+  from the same run are still stored.
 
 ## Remaining
-<!-- anything not finished, or `blocked: needs owner` -->
+
+- Live check of the notice-board field names and dates against the real account — part of T-013,
+  `blocked: needs owner`.

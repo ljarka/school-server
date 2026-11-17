@@ -16,6 +16,7 @@ internal object ProtocolPaths {
     const val API_CATEGORIES_PATH = "/Grades/Categories"
     const val API_COMMENTS_PATH = "/Grades/Comments"
     const val API_USERS_PATH = "/Users"
+    const val API_SCHOOL_NOTICES_PATH = "/SchoolNotices"
     const val API_AUTO_LOGIN_TOKEN_PATH = "/AutoLoginToken"
     const val AUTO_LOGIN_GATEWAY_PREFIX = "/loguj/token/"
     const val AUTO_LOGIN_GATEWAY_SUFFIX = "/przenies/uczen/widok/centrum_powiadomien"

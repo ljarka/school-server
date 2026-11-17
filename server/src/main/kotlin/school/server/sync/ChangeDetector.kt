@@ -17,6 +17,12 @@ data class Changes<T>(
     val deletedIds: List<String> = emptyList(),
 ) {
     val totalCount: Int get() = created.size + updated.size + deletedIds.size
+
+    operator fun plus(other: Changes<T>): Changes<T> = Changes(
+        created = created + other.created,
+        updated = updated + other.updated,
+        deletedIds = deletedIds + other.deletedIds,
+    )
 }
 
 class ChangeDetector {
@@ -129,6 +135,12 @@ class ChangeDetector {
         }
         if (old.bodyText != new.bodyText) {
             diff["bodyText"] = JsonPrimitive(old.bodyText) to JsonPrimitive(new.bodyText)
+        }
+        if (old.validFrom != new.validFrom) {
+            diff["validFrom"] = JsonPrimitive(old.validFrom?.toString()) to JsonPrimitive(new.validFrom?.toString())
+        }
+        if (old.validTo != new.validTo) {
+            diff["validTo"] = JsonPrimitive(old.validTo?.toString()) to JsonPrimitive(new.validTo?.toString())
         }
         if (old.attachments != new.attachments) {
             diff["attachments"] =

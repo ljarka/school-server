@@ -29,12 +29,15 @@ CREATE TABLE grade (
 CREATE TABLE message (
     child_id TEXT NOT NULL DEFAULT 'default',
     source_id TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'message',
     sender TEXT NOT NULL,
     subject TEXT NOT NULL,
     body_text TEXT,
     body_html TEXT,
     sent_at TEXT NOT NULL,
     attachments TEXT NOT NULL,
+    valid_from TEXT,
+    valid_to TEXT,
     content_hash TEXT NOT NULL,
     read_at TEXT,
     first_seen_at TEXT NOT NULL,
@@ -137,16 +140,19 @@ SELECT COUNT(*) FROM grade WHERE deleted_at IS NULL;
 
 upsertMessage:
 INSERT INTO message (
-    child_id, source_id, sender, subject, body_text, body_html, sent_at, attachments,
-    content_hash, read_at, first_seen_at, updated_at, deleted_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    child_id, source_id, type, sender, subject, body_text, body_html, sent_at, attachments,
+    valid_from, valid_to, content_hash, read_at, first_seen_at, updated_at, deleted_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(child_id, source_id) DO UPDATE SET
+    type = excluded.type,
     sender = excluded.sender,
     subject = excluded.subject,
     body_text = COALESCE(excluded.body_text, message.body_text),
     body_html = COALESCE(excluded.body_html, message.body_html),
     sent_at = excluded.sent_at,
     attachments = excluded.attachments,
+    valid_from = excluded.valid_from,
+    valid_to = excluded.valid_to,
     content_hash = excluded.content_hash,
     updated_at = excluded.updated_at,
     deleted_at = excluded.deleted_at;
@@ -164,6 +170,7 @@ LIMIT 1;
 listMessages:
 SELECT * FROM message
 WHERE (:childId IS NULL OR child_id = :childId)
+  AND (:type IS NULL OR type = :type)
   AND (:includeDeleted = 1 OR deleted_at IS NULL)
   AND (:unreadOnly = 0 OR read_at IS NULL)
 ORDER BY sent_at DESC, source_id DESC
@@ -172,6 +179,7 @@ LIMIT :limit OFFSET :offset;
 listMessagesPage:
 SELECT * FROM message
 WHERE (:childId IS NULL OR child_id = :childId)
+  AND (:type IS NULL OR type = :type)
   AND (:includeDeleted = 1 OR deleted_at IS NULL)
   AND (:unreadOnly = 0 OR read_at IS NULL)
   AND (:since IS NULL OR sent_at >= :since)
@@ -196,6 +204,7 @@ UPDATE message SET read_at = :readAt
 WHERE read_at IS NULL
   AND deleted_at IS NULL
   AND (:childId IS NULL OR child_id = :childId)
+  AND (:type IS NULL OR type = :type)
 RETURNING source_id;
 
 countActiveMessages:

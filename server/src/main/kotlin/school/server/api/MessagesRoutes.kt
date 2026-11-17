@@ -11,6 +11,7 @@ import java.util.Base64
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import school.model.MarkAllReadResponseDto
+import school.model.MessageType
 import school.model.MessagesPageDto
 import school.server.store.Store
 
@@ -25,6 +26,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
         val cursorRaw = call.request.queryParameters["cursor"]
         val cursor = cursorRaw?.let { decodeCursor(it) }
         val includeDeleted = parseBooleanParam(call.request.queryParameters["includeDeleted"], "includeDeleted")
+        val type = parseMessageTypeParam(call.request.queryParameters["type"])
 
         val rows = store.listMessagesPage(
             unreadOnly = unreadOnly,
@@ -33,6 +35,7 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
             after = cursor?.let { it.sentAt to it.sourceId },
             limit = limit + 1,
             childId = childId,
+            type = type,
         )
 
         val page = rows.take(limit)
@@ -86,9 +89,22 @@ fun Route.messagesRoutes(store: Store, clock: Clock = Clock.System) {
 
     post("/messages/read-all") {
         val childId = parseChildParam(store, call.request.queryParameters["child"])
-        val marked = store.markAllMessagesRead(clock.now(), childId)
+        val type = parseMessageTypeParam(call.request.queryParameters["type"])
+        val marked = store.markAllMessagesRead(clock.now(), childId, type)
         call.respond(MarkAllReadResponseDto(marked = marked))
     }
+}
+
+/** Optional `?type=` filter (ADR 0015); absent means both messages and announcements. */
+private fun parseMessageTypeParam(raw: String?): MessageType? = when (raw) {
+    null -> null
+    "message" -> MessageType.MESSAGE
+    "announcement" -> MessageType.ANNOUNCEMENT
+    else -> throw ApiException(
+        HttpStatusCode.BadRequest,
+        "BAD_REQUEST",
+        "Invalid parameter 'type': expected 'message' or 'announcement'",
+    )
 }
 
 private data class MessageCursor(val sentAt: Instant, val sourceId: String)

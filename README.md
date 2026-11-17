@@ -1,10 +1,10 @@
 # School Server
 
-A small self-hosted server that keeps an eye on your children's school e-journal (parent account) and gives you **grades and messages** through a simple REST API, together with a feed of **what changed** since you last looked.
+A small self-hosted server that keeps an eye on your children's school e-journal (parent account) and gives you **grades, messages and school announcements** through a simple REST API, together with a feed of **what changed** since you last looked.
 
 - Checks the e-journal every 15 minutes (configurable)
 - Remembers everything in a local SQLite database, so the API keeps working when the e-journal is down
-- Tells you what's new: new or changed grades, new messages
+- Tells you what's new: new or changed grades, new messages and announcements
 - Follows every child linked to your parent account (or just one, if you prefer)
 - Tracks which messages you have read, on this server
 - Read-only towards the e-journal: it never sends, deletes or changes anything there
@@ -133,11 +133,11 @@ Every endpoint except `/health`, `/docs` and `/api/v1/openapi.yaml` needs the `X
 | GET | `/api/v1/children` | Children linked to the parent account |
 | GET | `/api/v1/grades` | Grades. Filters: `subject`, `semester`, `kind`, `since`, `includeDeleted` |
 | GET | `/api/v1/grades/subjects` | Subjects with their grades and average |
-| GET | `/api/v1/messages` | Messages, newest first. Filters: `unread=true`, `since`, `includeDeleted`. Paging: `limit`, `cursor` |
+| GET | `/api/v1/messages` | Messages and announcements, newest first; each has `type: message\|announcement`. Filters: `type`, `unread=true`, `since`, `includeDeleted`. Paging: `limit`, `cursor` |
 | GET | `/api/v1/messages/{id}` | One message with its full text |
 | PUT | `/api/v1/messages/{id}/read` | Mark as read (on this server only) |
 | DELETE | `/api/v1/messages/{id}/read` | Mark as unread |
-| POST | `/api/v1/messages/read-all` | Mark all as read |
+| POST | `/api/v1/messages/read-all` | Mark all as read (optional `type`) |
 | GET | `/api/v1/changes` | What changed. `after=<event id>` or `since=<time>`, `type=grade\|message`, `limit` |
 | POST | `/api/v1/sync` | Check the e-journal now (at most once per 5 minutes) |
 

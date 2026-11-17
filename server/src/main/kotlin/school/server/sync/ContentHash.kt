@@ -45,6 +45,9 @@ object ContentHash {
             put("sender", JsonPrimitive(message.sender))
             put("sentAt", JsonPrimitive(message.sentAt.toString()))
             put("subject", JsonPrimitive(message.subject))
+            // Only announcements carry these; leaving them out otherwise keeps message hashes stable.
+            message.validFrom?.let { put("validFrom", JsonPrimitive(it.toString())) }
+            message.validTo?.let { put("validTo", JsonPrimitive(it.toString())) }
         }
         return sha256(json.encodeToString(JsonObject.serializer(), canonical))
     }

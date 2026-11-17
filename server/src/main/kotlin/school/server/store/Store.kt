@@ -15,6 +15,7 @@ import school.model.Grade
 import school.model.GradeKind
 import school.model.Message
 import school.model.MessageHeader
+import school.model.MessageType
 import school.model.SyncRunStatus
 import school.server.store.db.SchoolDatabase
 import school.server.sync.Changes
@@ -42,6 +43,9 @@ data class StoredMessage(
     val firstSeenAt: Instant,
     val updatedAt: Instant,
     val deletedAt: Instant?,
+    val type: MessageType = MessageType.MESSAGE,
+    val validFrom: LocalDate? = null,
+    val validTo: LocalDate? = null,
 ) {
     val hasAttachments: Boolean get() = attachments.isNotEmpty()
 }
@@ -169,12 +173,15 @@ class Store(private val db: SchoolDatabase) {
         db.schemaQueries.upsertMessage(
             child_id = childId,
             source_id = header.sourceId,
+            type = MessageType.MESSAGE.wireName(),
             sender = header.sender,
             subject = header.subject,
             body_text = null,
             body_html = null,
             sent_at = header.sentAt.toDb(),
             attachments = json.encodeToString(attachments),
+            valid_from = null,
+            valid_to = null,
             content_hash = contentHash,
             read_at = null,
             first_seen_at = firstSeenAt.toDb(),
@@ -194,12 +201,15 @@ class Store(private val db: SchoolDatabase) {
         db.schemaQueries.upsertMessage(
             child_id = childId,
             source_id = message.sourceId,
+            type = message.type.wireName(),
             sender = message.sender,
             subject = message.subject,
             body_text = message.bodyText,
             body_html = message.bodyHtml,
             sent_at = message.sentAt.toDb(),
             attachments = json.encodeToString(message.attachments),
+            valid_from = message.validFrom?.toString(),
+            valid_to = message.validTo?.toString(),
             content_hash = contentHash,
             read_at = null,
             first_seen_at = firstSeenAt.toDb(),
@@ -228,8 +238,10 @@ class Store(private val db: SchoolDatabase) {
         limit: Int = 50,
         offset: Int = 0,
         childId: String? = null,
+        type: MessageType? = null,
     ): List<StoredMessage> = db.schemaQueries.listMessages(
         childId = childId,
+        type = type?.wireName(),
         includeDeleted = if (includeDeleted) 1L else 0L,
         unreadOnly = if (unreadOnly) 1L else 0L,
         limit = limit.toLong(),
@@ -244,8 +256,10 @@ class Store(private val db: SchoolDatabase) {
         after: Pair<Instant, String>?,
         limit: Int,
         childId: String?,
+        type: MessageType? = null,
     ): List<StoredMessage> = db.schemaQueries.listMessagesPage(
         childId = childId,
+        type = type?.wireName(),
         includeDeleted = if (includeDeleted) 1L else 0L,
         unreadOnly = if (unreadOnly) 1L else 0L,
         since = since?.toDb(),
@@ -263,8 +277,9 @@ class Store(private val db: SchoolDatabase) {
     }
 
     /** Marks all unread messages as read and returns how many were changed (atomic, one statement). */
-    fun markAllMessagesRead(now: Instant, childId: String? = null): Long =
-        db.schemaQueries.markAllMessagesRead(readAt = now.toDb(), childId = childId).executeAsList().size.toLong()
+    fun markAllMessagesRead(now: Instant, childId: String? = null, type: MessageType? = null): Long =
+        db.schemaQueries.markAllMessagesRead(readAt = now.toDb(), childId = childId, type = type?.wireName())
+            .executeAsList().size.toLong()
 
     fun countActiveMessages(): Long = db.schemaQueries.countActiveMessages().executeAsOne()
 
@@ -499,6 +514,9 @@ class Store(private val db: SchoolDatabase) {
         firstSeenAt = Instant.parse(first_seen_at),
         updatedAt = Instant.parse(updated_at),
         deletedAt = deleted_at?.let(Instant::parse),
+        type = parseMessageType(type),
+        validFrom = valid_from?.let(LocalDate::parse),
+        validTo = valid_to?.let(LocalDate::parse),
     )
 
     private fun school.server.store.db.Change_event.toStoredChangeEvent(): StoredChangeEvent = StoredChangeEvent(
@@ -558,6 +576,17 @@ private fun parseEntityType(raw: String): EntityType = when (raw) {
     "grade" -> EntityType.GRADE
     "message" -> EntityType.MESSAGE
     else -> error("Unknown entity type: $raw")
+}
+
+internal fun MessageType.wireName(): String = when (this) {
+    MessageType.MESSAGE -> "message"
+    MessageType.ANNOUNCEMENT -> "announcement"
+}
+
+private fun parseMessageType(raw: String): MessageType = when (raw) {
+    "message" -> MessageType.MESSAGE
+    "announcement" -> MessageType.ANNOUNCEMENT
+    else -> error("Unknown message type: $raw")
 }
 
 private fun ChangeType.wireName(): String = when (this) {

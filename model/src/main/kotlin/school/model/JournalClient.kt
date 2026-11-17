@@ -20,6 +20,13 @@ interface JournalClient {
     fun fetchMessageHeaders(childId: String? = null): MessageHeaderListing
 
     fun fetchMessage(sourceId: String, childId: String? = null): Message
+
+    /**
+     * Returns the school's notice-board announcements as [Message]s with [MessageType.ANNOUNCEMENT]
+     * (ADR 0015), or `null` when they are not available for this account. Like [fetchGrades], `null`
+     * means "unknown", never "no announcements".
+     */
+    fun fetchAnnouncements(childId: String? = null): List<Message>? = null
 }
 
 /**

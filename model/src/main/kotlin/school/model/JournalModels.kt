@@ -26,6 +26,16 @@ enum class ChangeType {
     DELETED,
 }
 
+/** What a message-list item is: an inbox message or a notice-board announcement (ADR 0015). */
+@Serializable
+enum class MessageType {
+    @SerialName("message")
+    MESSAGE,
+
+    @SerialName("announcement")
+    ANNOUNCEMENT,
+}
+
 @Serializable
 enum class GradeKind {
     @SerialName("regular")
@@ -99,4 +109,8 @@ data class Message(
     val bodyText: String,
     val bodyHtml: String,
     val attachments: List<Attachment>,
+    val type: MessageType = MessageType.MESSAGE,
+    /** Notice-board visibility window (announcements only). */
+    val validFrom: LocalDate? = null,
+    val validTo: LocalDate? = null,
 )

@@ -27,7 +27,8 @@ For the family (and Picfort) both are "something the school wrote to us", read i
   always `null` for `type: message`.
 - Change feed: announcements use `entityType: message`; `entity.type` tells them apart.
   `EntityType` does not grow.
-- Storage: the same message table with a `type` column (migration, default `message`). Sync fetches
+- Storage: the same message table with `type` (default `message`), `valid_from`, `valid_to` columns,
+  added to the base v1 schema without a migration (owner, 2026-11-17: no installs yet, as in ADR 0013). Sync fetches
   inbox and board separately and diffs each type on its own, so a failed or partial board fetch never
   deletes inbox messages and vice versa (ADR 0014). Read state stays local (ADR 0007).
 

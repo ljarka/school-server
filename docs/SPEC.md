@@ -49,12 +49,14 @@ A small self-hosted server that:
 - Login, session keeping, re-login on expiry; stop after a rejected password.
 - Read grades (subject, value, weight, category, semester, kind, teacher, comment, date).
 - Read received messages (list + body, attachment names).
+- Read school announcements (notice board) and serve them in the message list with
+  `type: announcement` ([ADR 0015](adrs/0015-announcements-in-messages.md)).
 - Change detection with a persistent change feed.
 - REST API + OpenAPI docs + Swagger UI; local read state for messages.
 - Docker image, `.env` configuration, CI.
 
 ### 2.2 Later
-- **v1.x:** announcements, attendance, homework, test calendar, timetable, lucky number.
+- **v1.x:** attendance, homework, test calendar, timetable, lucky number.
 - **v2:** **sending messages** and other write actions (needs an ADR that lifts AGENTS.md rule 1
   for those endpoints), push to Picfort (webhook/SSE), several accounts/children, downloading attachments.
 
@@ -100,7 +102,7 @@ Exact field types: [`api/openapi.yaml`](api/openapi.yaml) schemas; storage: [T-0
 - **Grade** — `id` (`g_<e-journal id>`), subject, value (`"4+"`), numericValue (4.5), weight,
   category, semester, kind (`regular | proposed_semester | semester | proposed_final | final`),
   countsToAverage, teacher, comment, issuedOn, firstSeenAt, updatedAt, deletedAt.
-- **Message** — `id` (`m_<e-journal id>`), sender, subject, sentAt, bodyText, bodyHtml
+- **Message** — `id` (`m_<e-journal id>`, announcements `a_<e-journal id>`), `type` (`message` | `announcement`), sender, subject, sentAt, bodyText, bodyHtml, `validFrom` / `validTo` (announcements)
   (sanitised), attachments (names), read/readAt (**local**), deletedAt. Received folder only.
 - **ChangeEvent** — monotonic `id` (cursor), entityType, entityId, changeType, diff, detectedAt.
 - **SyncRun** — start/finish, status (`running | ok | error | auth_failed`), error code, counts.
@@ -118,7 +120,7 @@ Served live at `/api/v1/openapi.yaml` and `/docs` ([ADR 0010](adrs/0010-openapi-
 | GET | `/api/v1/status` | Sync state, counts, `lastEventId` |
 | GET | `/api/v1/grades` | Grades (filters: subject, semester, kind, since) |
 | GET | `/api/v1/grades/subjects` | Grades per subject + weighted average |
-| GET | `/api/v1/messages` | Messages without body (unread, since, paging) |
+| GET | `/api/v1/messages` | Messages and announcements without body (type, unread, since, paging) |
 | GET | `/api/v1/messages/{id}` | One message with body |
 | PUT / DELETE | `/api/v1/messages/{id}/read` | Mark read / unread (local) |
 | POST | `/api/v1/messages/read-all` | Mark all read (local) |

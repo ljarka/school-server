@@ -26,6 +26,7 @@ import school.model.JournalUnavailable
 import school.model.Message
 import school.model.MessageHeader
 import school.model.MessageHeaderListing
+import school.model.MessageType
 import school.model.SyncRunStatus
 import school.server.auth.FakeClock
 import school.server.store.DatabaseFactory
@@ -54,6 +55,8 @@ class SyncServiceTest {
         var gradesError: Throwable? = null
         var headersError: Throwable? = null
         var onFetchGrades: (() -> Unit)? = null
+        var announcements: List<Message>? = null
+        var announcementsError: Throwable? = null
 
         override fun login() {
             loginCount++
@@ -75,6 +78,94 @@ class SyncServiceTest {
             fetchedMessageIds += sourceId
             return messagesById[sourceId] ?: error("Missing fake message $sourceId")
         }
+
+        override fun fetchAnnouncements(childId: String?): List<Message>? {
+            announcementsError?.let { throw it }
+            return announcements
+        }
+    }
+
+    private fun announcement(id: String, subject: String = "Ogłoszenie $id") = Message(
+        sourceId = id,
+        sender = "Dyrekcja",
+        subject = subject,
+        sentAt = t0,
+        bodyText = "Treść",
+        bodyHtml = "Treść",
+        attachments = emptyList(),
+        type = MessageType.ANNOUNCEMENT,
+        validFrom = LocalDate.parse("2026-11-16"),
+        validTo = LocalDate.parse("2026-11-30"),
+    )
+
+    @Test
+    fun `announcements are stored as messages and diffed separately from the inbox`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = openStore()
+        val m1 = Message("m_1", "Anna", "Temat 1", t0, "Body 1", "<p>Body 1</p>", emptyList())
+        val journal = FakeJournalClient().apply {
+            headers = listOf(MessageHeader("m_1", "Anna", "Temat 1", t0, false))
+            messagesById = mapOf("m_1" to m1)
+            announcements = listOf(announcement("a_1"))
+        }
+        val service = SyncService(journal = journal, store = store, clock = FakeClock(t0), ioDispatcher = dispatcher)
+
+        assertEquals(SyncResult.Ok(2), service.syncNow())
+        val stored = store.getMessage("a_1")!!
+        assertEquals(MessageType.ANNOUNCEMENT, stored.type)
+        assertEquals(LocalDate.parse("2026-11-30"), stored.validTo)
+        assertEquals(MessageType.MESSAGE, store.getMessage("m_1")!!.type)
+        assertTrue(store.listChangeEventsAfter(0).all { it.entityType == school.model.EntityType.MESSAGE })
+
+        // Inbox empties: only the inbox message is deleted, the announcement stays.
+        journal.headers = emptyList()
+        assertEquals(SyncResult.Ok(1), service.syncNow())
+        assertEquals("m_1", store.listChangeEventsAfter(2).single().entityId)
+        assertNull(store.getMessage("a_1")!!.deletedAt)
+
+        // Board unknown (null): nothing is deleted.
+        journal.announcements = null
+        assertEquals(SyncResult.Ok(0), service.syncNow())
+        assertNull(store.getMessage("a_1")!!.deletedAt)
+
+        // Board edited, then emptied: updated, then deleted.
+        journal.announcements = listOf(announcement("a_1", subject = "Nowy temat"))
+        assertEquals(SyncResult.Ok(1), service.syncNow())
+        assertEquals(ChangeType.UPDATED, store.listChangeEventsAfter(3).single().changeType)
+        journal.announcements = emptyList()
+        assertEquals(SyncResult.Ok(1), service.syncNow())
+        assertEquals(ChangeType.DELETED, store.listChangeEventsAfter(4).single().changeType)
+    }
+
+    @Test
+    fun `cut inbox listing still deletes announcements that left the board`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = openStore()
+        val journal = FakeJournalClient().apply { announcements = listOf(announcement("a_1")) }
+        val service = SyncService(journal = journal, store = store, clock = FakeClock(t0), ioDispatcher = dispatcher)
+        service.syncNow()
+
+        journal.headersComplete = false
+        journal.announcements = emptyList()
+        assertEquals(SyncResult.Ok(1), service.syncNow())
+        assertTrue(store.getMessage("a_1")!!.deletedAt != null)
+    }
+
+    @Test
+    fun `announcements failure keeps inbox changes and marks run error`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = openStore()
+        val m1 = Message("m_1", "Anna", "Temat 1", t0, "Body 1", "<p>Body 1</p>", emptyList())
+        val journal = FakeJournalClient().apply {
+            headers = listOf(MessageHeader("m_1", "Anna", "Temat 1", t0, false))
+            messagesById = mapOf("m_1" to m1)
+            announcementsError = JournalUnavailable("layout_changed:announcements")
+        }
+        val service = SyncService(journal = journal, store = store, clock = FakeClock(t0), ioDispatcher = dispatcher)
+
+        assertEquals(SyncResult.Failed("layout_changed:announcements"), service.syncNow())
+        assertEquals(1, store.listMessages().size)
+        assertEquals(SyncRunStatus.ERROR, store.getLastSyncRun()!!.status)
     }
 
     @Test

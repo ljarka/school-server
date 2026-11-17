@@ -81,6 +81,35 @@ class HttpJournalClient(
         )
     }
 
+    override fun fetchAnnouncements(childId: String?): List<Message>? {
+        val raw = try {
+            getApiJson(ProtocolPaths.API_SCHOOL_NOTICES_PATH, childId)
+        } catch (_: AccessDeniedException) {
+            logger.info("e-journal announcements not available for this account; keeping stored announcements")
+            return null
+        }
+        val notices = try {
+            json.decodeFromString<SchoolNoticesResponseDto>(raw).notices
+        } catch (e: Exception) {
+            throw JournalUnavailable("layout_changed:announcements", e)
+        }
+        if (notices.isEmpty()) {
+            return emptyList()
+        }
+        val users = if (notices.any { it.addedBy != null }) {
+            try {
+                decodeLookup<UsersResponseDto>(ProtocolPaths.API_USERS_PATH, "users", childId).users.associateBy {
+                    it.id
+                }
+            } catch (_: AccessDeniedException) {
+                emptyMap()
+            }
+        } else {
+            emptyMap()
+        }
+        return AnnouncementsMapper.map(notices, users)
+    }
+
     private inline fun <reified T> decodeLookup(path: String, name: String, childId: String?): T {
         val raw = getApiJson(path, childId)
         return try {

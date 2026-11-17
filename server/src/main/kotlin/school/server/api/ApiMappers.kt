@@ -38,6 +38,9 @@ internal fun StoredMessage.toSummaryDto(): MessageSummaryDto = MessageSummaryDto
     read = readAt != null,
     readAt = readAt,
     deletedAt = deletedAt,
+    type = type,
+    validFrom = validFrom,
+    validTo = validTo,
 )
 
 internal fun StoredMessage.toDetailDto(): MessageDetailDto = MessageDetailDto(
@@ -50,6 +53,9 @@ internal fun StoredMessage.toDetailDto(): MessageDetailDto = MessageDetailDto(
     read = readAt != null,
     readAt = readAt,
     deletedAt = deletedAt,
+    type = type,
+    validFrom = validFrom,
+    validTo = validTo,
     bodyText = bodyText ?: "",
     bodyHtml = bodyHtml ?: "",
     attachments = attachments,

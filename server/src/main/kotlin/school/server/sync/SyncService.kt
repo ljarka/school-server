@@ -24,6 +24,7 @@ import school.model.JournalClient
 import school.model.JournalUnavailable
 import school.model.Message
 import school.model.MessageHeader
+import school.model.MessageType
 import school.model.SyncRunStatus
 import school.server.store.Store
 import school.server.store.StoredMessage
@@ -253,6 +254,7 @@ class SyncService(
                 includeDeleted = true,
                 limit = Int.MAX_VALUE,
                 childId = childId,
+                type = MessageType.MESSAGE,
             ).associateBy { it.sourceId }
 
             messages = listing.headers.map { header ->
@@ -267,6 +269,15 @@ class SyncService(
             messagesError = e.message ?: "journal_unavailable"
         }
 
+        var announcements: List<Message>? = null
+        var announcementsError: String? = null
+        try {
+            // null = the board is not available for this account: keep what we have (ADR 0014, 0015).
+            announcements = journal.fetchAnnouncements(childId)
+        } catch (e: JournalUnavailable) {
+            announcementsError = e.message ?: "journal_unavailable"
+        }
+
         return ChildFetchOutcome(
             childId = childId,
             grades = grades,
@@ -274,6 +285,8 @@ class SyncService(
             messages = messages,
             messagesComplete = messagesComplete,
             messagesError = messagesError,
+            announcements = announcements,
+            announcementsError = announcementsError,
         )
     }
 
@@ -292,17 +305,22 @@ class SyncService(
                 )
             } ?: Changes()
 
-            val messageChanges = outcome.messages?.let { fresh ->
+            // Inbox and board are diffed separately, so a failed or cut listing of one never deletes the other.
+            val inboxChanges = outcome.messages?.let { fresh ->
                 detector.diffMessages(
-                    stored = store.listMessages(
-                        includeDeleted = true,
-                        limit = Int.MAX_VALUE,
-                        childId = outcome.childId,
-                    ),
+                    stored = storedMessages(outcome.childId, MessageType.MESSAGE),
                     fresh = fresh,
                     complete = outcome.messagesComplete,
                 )
             } ?: Changes()
+            val announcementChanges = outcome.announcements?.let { fresh ->
+                detector.diffMessages(
+                    stored = storedMessages(outcome.childId, MessageType.ANNOUNCEMENT),
+                    fresh = fresh,
+                    complete = true,
+                )
+            } ?: Changes()
+            val messageChanges = inboxChanges + announcementChanges
 
             changesCount += store.applyChanges(
                 syncRunId = runId,
@@ -311,9 +329,10 @@ class SyncService(
                 now = finishedAt,
                 childId = outcome.childId,
             )
-            itemsFetched += (outcome.grades?.size ?: 0) + (outcome.messages?.size ?: 0)
+            itemsFetched += (outcome.grades?.size ?: 0) + (outcome.messages?.size ?: 0) +
+                (outcome.announcements?.size ?: 0)
             if (firstError == null) {
-                firstError = outcome.gradesError ?: outcome.messagesError
+                firstError = outcome.gradesError ?: outcome.messagesError ?: outcome.announcementsError
             }
         }
 
@@ -346,6 +365,9 @@ class SyncService(
         return SyncResult.Ok(changesCount)
     }
 
+    private fun storedMessages(childId: String, type: MessageType): List<StoredMessage> =
+        store.listMessages(includeDeleted = true, limit = Int.MAX_VALUE, childId = childId, type = type)
+
     private fun StoredMessage.toMessage(): Message = Message(
         sourceId = sourceId,
         sender = sender,
@@ -354,6 +376,9 @@ class SyncService(
         bodyText = bodyText!!,
         bodyHtml = bodyHtml ?: bodyText,
         attachments = attachments,
+        type = type,
+        validFrom = validFrom,
+        validTo = validTo,
     )
 
     private fun headerMatches(existing: StoredMessage, header: MessageHeader): Boolean = existing.deletedAt == null &&
@@ -370,6 +395,8 @@ class SyncService(
         val messages: List<Message>?,
         val messagesComplete: Boolean,
         val messagesError: String?,
+        val announcements: List<Message>?,
+        val announcementsError: String?,
     )
 
     private companion object {

@@ -1,0 +1,24 @@
+{
+  "Resources": {},
+  "Url": "https://api.example.test/3.0/SchoolNotices",
+  "SchoolNotices": [
+    {
+      "Id": "1f3a9c",
+      "StartDate": "2026-11-16",
+      "EndDate": "2026-11-27",
+      "Subject": "Zbiórka makulatury",
+      "Content": "Drodzy Rodzice,\nw piątek zbieramy makulaturę.\nDziękujemy za pomoc & wsparcie!",
+      "AddedBy": { "Id": 20, "Url": "https://api.example.test/3.0/Users/20" },
+      "CreationDate": "2026-11-15 18:45:00",
+      "WasRead": false
+    },
+    {
+      "Id": 77,
+      "StartDate": "2026-12-01",
+      "EndDate": null,
+      "Subject": "Jasełka",
+      "Content": "Zapraszamy na jasełka szkolne.",
+      "AddedBy": { "Id": 99, "Url": "https://api.example.test/3.0/Users/99" }
+    }
+  ]
+}

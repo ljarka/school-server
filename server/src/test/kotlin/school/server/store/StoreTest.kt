@@ -162,6 +162,34 @@ class StoreTest {
     }
 
     @Test
+    fun `type filter separates announcements from inbox messages in lists and mark all read`() {
+        val store = openStore()
+        val announcement = message("a_1", now).copy(
+            type = school.model.MessageType.ANNOUNCEMENT,
+            validFrom = kotlinx.datetime.LocalDate.parse("2026-11-16"),
+            validTo = null,
+        )
+        store.upsertMessage(message("m_1", now), "h1", now)
+        store.upsertMessage(announcement, "h2", now)
+
+        val stored = assertNotNull(store.getMessage("a_1"))
+        assertEquals(school.model.MessageType.ANNOUNCEMENT, stored.type)
+        assertEquals(kotlinx.datetime.LocalDate.parse("2026-11-16"), stored.validFrom)
+        assertNull(stored.validTo)
+        assertEquals(
+            listOf("a_1"),
+            store.listMessages(type = school.model.MessageType.ANNOUNCEMENT).map {
+                it.sourceId
+            },
+        )
+        assertEquals(listOf("m_1"), store.listMessages(type = school.model.MessageType.MESSAGE).map { it.sourceId })
+        assertEquals(2, store.listMessages().size)
+
+        assertEquals(1L, store.markAllMessagesRead(now, type = school.model.MessageType.ANNOUNCEMENT))
+        assertNull(store.getMessage("m_1")!!.readAt)
+    }
+
+    @Test
     fun `interrupted sync runs are closed as errors`() {
         val store = openStore()
         store.insertSyncRun(now)

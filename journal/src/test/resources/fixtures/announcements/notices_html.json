@@ -1,0 +1,14 @@
+{
+  "Resources": {},
+  "Url": "https://api.example.test/3.0/SchoolNotices",
+  "SchoolNotices": [
+    {
+      "Id": "b42",
+      "StartDate": "2026-11-17",
+      "EndDate": "2026-11-20",
+      "Subject": "Dzień Życzliwości",
+      "Content": "<p onclick=\"alert(1)\" style=\"color:red\">Ubieramy się na żółto.</p><script>evil()</script>",
+      "CreationDate": "2026-11-17 07:30:00"
+    }
+  ]
+}

@@ -27,6 +27,7 @@ tags:
   - name: Status
   - name: Grades
   - name: Messages
+    description: Inbox messages and school notice-board announcements in one list, told apart by `type`.
   - name: Changes
   - name: Sync
 
@@ -153,10 +154,11 @@ paths:
   /api/v1/messages:
     get:
       tags: [Messages]
-      summary: List received messages (without body), newest first
+      summary: List received messages and announcements (without body), newest first
       operationId: listMessages
       parameters:
         - $ref: '#/components/parameters/ChildFilter'
+        - $ref: '#/components/parameters/MessageTypeFilter'
         - name: unread
           in: query
           description: '`true` = only messages not marked read on this server.'
@@ -199,7 +201,7 @@ paths:
       - $ref: '#/components/parameters/MessageId'
     get:
       tags: [Messages]
-      summary: One message with its body
+      summary: One message or announcement with its body
       operationId: getMessage
       responses:
         '200':
@@ -244,10 +246,11 @@ paths:
   /api/v1/messages/read-all:
     post:
       tags: [Messages]
-      summary: Mark every message as read (on this server only)
+      summary: Mark every message and announcement as read (on this server only)
       operationId: markAllMessagesRead
       parameters:
         - $ref: '#/components/parameters/ChildFilter'
+        - $ref: '#/components/parameters/MessageTypeFilter'
       responses:
         '200':
           description: How many were changed
@@ -345,7 +348,13 @@ components:
       name: id
       in: path
       required: true
+      description: '`m_…` for inbox messages, `a_…` for announcements.'
       schema: { type: string, example: m_4471 }
+    MessageTypeFilter:
+      name: type
+      in: query
+      description: Only this kind of item. Without it, both messages and announcements.
+      schema: { $ref: '#/components/schemas/MessageType' }
     IncludeDeleted:
       name: includeDeleted
       in: query
@@ -412,6 +421,12 @@ components:
       type: string
       enum: [grade, message]
 
+    MessageType:
+      type: string
+      description: >-
+        `message` = inbox message; `announcement` = school notice-board entry. More values may be added.
+      enum: [message, announcement]
+
     GradeKind:
       type: string
       enum: [regular, proposed_semester, semester, proposed_final, final]
@@ -466,17 +481,30 @@ components:
 
     MessageSummary:
       type: object
-      required: [id, childId, sender, subject, sentAt, hasAttachments, read, readAt, deletedAt]
+      required: [id, childId, type, sender, subject, sentAt, hasAttachments, read, readAt, deletedAt,
+                 validFrom, validTo]
       properties:
-        id: { type: string, example: m_4471 }
+        id: { type: string, example: m_4471, description: '`m_…` message, `a_…` announcement.' }
         childId: { type: string }
-        sender: { type: string }
+        type: { $ref: '#/components/schemas/MessageType' }
+        sender: { type: string, description: 'Announcements: the author, `""` if unknown.' }
         subject: { type: string }
-        sentAt: { type: string, format: date-time }
-        hasAttachments: { type: boolean }
+        sentAt:
+          type: string
+          format: date-time
+          description: Announcements use their creation time, or the start date at 00:00 Europe/Warsaw.
+        hasAttachments: { type: boolean, description: Always `false` for announcements. }
         read: { type: boolean, description: Marked read on this server (not in the e-journal). }
         readAt: { type: [string, 'null'], format: date-time }
         deletedAt: { type: [string, 'null'], format: date-time }
+        validFrom:
+          type: [string, 'null']
+          format: date
+          description: First day the announcement is shown on the board; always `null` for messages.
+        validTo:
+          type: [string, 'null']
+          format: date
+          description: Last day the announcement is shown on the board; `null` for messages or open-ended.
 
     Message:
       allOf:

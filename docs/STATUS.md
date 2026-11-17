@@ -59,13 +59,13 @@ Everything that knows the provider, isolated in `journal/`.
 
 | Task | Description | Status |
 |------|-------------|--------|
-| [T-016](tasks/T-016-announcements.md) | Announcements in `/messages` with `type: announcement` (ADR 0015) | `ready` |
+| [T-016](tasks/T-016-announcements.md) | Announcements in `/messages` with `type: announcement` (ADR 0015) | `done` |
 
 Order: T-001 first. Then T-002/T-003/T-004 and T-005→T-006/T-007 can go in parallel.
 T-008 needs T-003 + T-006/T-007; T-009 needs T-005 + T-008; T-010/T-011 need T-004 + T-009.
 
 ### Later (not v1)
-Sending messages (v2, needs an ADR lifting AGENTS.md rule 1), announcements, attendance,
+Sending messages (v2, needs an ADR lifting AGENTS.md rule 1), attendance,
 homework, test calendar, timetable, lucky number; push / webhooks / SSE to Picfort; several
 parent accounts; attachment download.
 
@@ -108,3 +108,4 @@ Agents may change these on their own by recording the decision (AGENTS.md "Auton
 | T-012 | `cb5ddba` | 2026-11-16 |
 | T-014 | `4e4222d`, `59ec50c`, `05f414e` | 2026-11-17 |
 | T-015 | see git log `T-015:` | 2026-11-17 |
+| T-016 | see git log `T-016:` | 2026-11-17 |

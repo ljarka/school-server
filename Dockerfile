@@ -44,7 +44,7 @@ WORKDIR /data
 EXPOSE 5100
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-    CMD curl -fsS "http://127.0.0.1:${PORT}/health" || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-5100}/health" || exit 1
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["/app/bin/server"]

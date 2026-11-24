@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /src
 
 COPY gradle gradle
@@ -16,7 +16,7 @@ COPY server server
 ARG APP_VERSION=dev
 RUN ./gradlew :server:installDist --no-daemon -PappVersion=${APP_VERSION}
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 
 LABEL org.opencontainers.image.title="School Server" \
       org.opencontainers.image.description="Grades and messages from a school e-journal, with a change feed"
